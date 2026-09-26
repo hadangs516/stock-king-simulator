@@ -67,7 +67,7 @@ King.execute = function(original,req,env) {
   if(action==='signup'||action==='login')return King.login(s,req,env);
   var auth=King.authenticate(s,req,env),a=auth.account;
   var adminAction=action.indexOf('admin')===0;
-  if(s.maintenance.enabled&&!auth.admin)King.fail('점검 중: '+s.maintenance.reason);
+  if(s.maintenance.enabled&&!auth.admin&&!(action==='adminUnlock'&&env.isAdmin(auth.actor.name)&&env.adminCheck(req.secret||'')))King.fail('점검 중: '+s.maintenance.reason);
   if(a.restricted&&(!a.restricted.until||a.restricted.until>t)&&!auth.admin)King.fail('이용 제한: '+a.restricted.reason);
   if(action==='logout'){delete s.sessions[env.hash(req.token)];s.revision++;return {state:s,response:{ok:true}};}
   var ready=King.advance(s,t,env);
