@@ -1,0 +1,12 @@
+let audioContext,gain,musicTimer,noteIndex=0,settings={bgm:0,sfx:.3},activated=false,visible=true;
+const notes=[261.63,329.63,392,329.63,293.66,349.23,440,349.23];
+function tone(frequency,volume,duration){if(!audioContext||volume<=0)return;const oscillator=audioContext.createOscillator(),envelope=audioContext.createGain(),now=audioContext.currentTime;oscillator.type='sine';oscillator.frequency.value=frequency;envelope.gain.setValueAtTime(0,now);envelope.gain.linearRampToValueAtTime(volume*.07,now+.04);envelope.gain.exponentialRampToValueAtTime(.00001,now+duration);oscillator.connect(envelope);envelope.connect(audioContext.destination);oscillator.start();oscillator.stop(now+duration);}
+function music(){clearInterval(musicTimer);if(!activated||!visible||!settings.bgm)return;musicTimer=setInterval(()=>tone(notes[noteIndex++%notes.length],settings.bgm,1.3),1600);}
+export const sound={activate(){if(!audioContext){const Context=window.AudioContext||window.webkitAudioContext;if(!Context)return;audioContext=new Context();}audioContext.resume().catch(()=>{});if(!activated){activated=true;music();}},settings(value){const changed=settings.bgm!==value.bgm;settings=value;if(changed)music();},effect(){tone(659.25,settings.sfx,.18);setTimeout(()=>tone(783.99,settings.sfx,.25),100);},visibility(value){visible=value;music();if(!visible)audioContext?.suspend();else if(activated)audioContext?.resume().catch(()=>{});}};
+let installPrompt;
+export function prepareInstall(){window.addEventListener('beforeinstallprompt',event=>{event.preventDefault();installPrompt=event;});if('serviceWorker'in navigator)navigator.serviceWorker.register('./sw.js').catch(()=>{});}
+export async function installApp(show){
+ const standalone=matchMedia('(display-mode: standalone)').matches||navigator.standalone;if(standalone)return show('앱으로 실행 중이에요','<p>이미 설치된 환경에서 실행하고 있습니다.</p>');
+ if(installPrompt){await installPrompt.prompt();const choice=await installPrompt.userChoice;installPrompt=null;try{localStorage.setItem('king-install-choice',choice.outcome);}catch{}return;}
+ const ios=/iPhone|iPad|iPod/.test(navigator.userAgent);show('홈 화면에 설치하기',`<p>${ios?'Safari에서 공유 버튼을 누른 뒤 “홈 화면에 추가”를 선택하세요.':'Chrome 또는 Edge 메뉴에서 “앱 설치” 또는 “홈 화면에 추가”를 선택하세요.'}</p><p class="footnote">브라우저에 해당 메뉴가 없다면 이 환경에서는 설치를 지원하지 않을 수 있습니다. 설치 앱과 브라우저의 저장 공간이 다르면 다시 로그인해야 합니다.</p>`);
+}

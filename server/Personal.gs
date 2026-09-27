@@ -1,6 +1,7 @@
 var King = typeof King === 'undefined' ? {} : King;
-King.backupData = function(a) {return {schema:1,accountId:a.id,runId:a.runId,version:a.backupVersion||0,cash:a.cash,holdings:a.holdings,realized:a.realized,started:a.started};};
+King.backupData = function(a) {return {schema:1,accountId:a.id,runId:a.runId,version:a.backupVersion||0,cash:a.cash,holdings:a.holdings,realized:a.realized,started:a.started,playSeconds:a.playSeconds,achievements:a.achievements,statistics:a.statistics,tutorial:a.tutorial,readNews:a.readNews,assetHistory:a.assetHistory,settings:a.settings};};
 King.personal = function(s,a,r,t,env,auth) {
+  if(r.action==='receipt'){var receipt=s.receipts[r.id];if(!receipt||receipt.accountId!==a.id)King.fail('영수증을 찾을 수 없습니다.');return {receipt};}
   if(r.action==='records'){var offset=King.int(r.offset||0,0,10000000);var list=Object.values(s.records).filter(function(v){return v.accountId===a.id;}).reverse();return {records:list.slice(offset,offset+30),next:offset+30<list.length?offset+30:null};}
   if(r.action==='claim'){
     var selected=Object.values(s.claims).filter(function(c){return c.accountId===a.id&&c.status==='대기'&&(r.claimId==='all'||r.claimId===c.id);}),claimed=[],waiting=[];
@@ -25,7 +26,7 @@ King.personal = function(s,a,r,t,env,auth) {
   if(r.action==='pin'){if(auth.proxy)King.fail('대리 화면에서 PIN 변경은 허용하지 않습니다.');if(r.pin!==a.pin||!/^\d{4}$/.test(r.newPin||''))King.fail('현재 PIN과 새 PIN을 확인해 주세요.');a.pin=r.newPin;Object.keys(s.sessions).forEach(function(k){if(s.sessions[k].accountId===a.id)delete s.sessions[k];});return {loginRequired:true};}
   if(r.action==='reset'){if(auth.proxy||r.pin!==a.pin)King.fail('본인 PIN을 확인해 주세요.');Object.values(s.orders).filter(function(o){return o.accountId===a.id&&o.status==='대기';}).forEach(function(o){o.status='취소';o.closed=t;});Object.values(s.claims).filter(function(c){return c.accountId===a.id&&!c.reward&&c.status==='대기';}).forEach(function(c){c.status='포기';});King.log(s,a,'진행 초기화',{oldRun:a.runId},t,env);King.newRun(a,t,env);a.backupVersion=(a.backupVersion||0)+1;return {};}
   if(r.action==='backup'){var data=King.backupData(a),body=JSON.stringify(data);return {backup:{data,signature:env.sign(body)}};}
-  if(r.action==='restore'){var b=r.backup;if(!b||!b.data||env.sign(JSON.stringify(b.data))!==b.signature||b.data.accountId!==a.id||b.data.runId!==a.runId||JSON.stringify(b.data)!==JSON.stringify(King.backupData(a)))King.fail('백업이 변조되었거나 서버 최신 상태보다 오래되었습니다.');King.log(s,a,'백업 검증 복원',{version:b.data.version},t,env);return {restored:true};}
+  if(r.action==='restore'){var b=r.backup;if(!b||!b.data||b.data.schema!==1||env.sign(JSON.stringify(b.data))!==b.signature||b.data.accountId!==a.id||b.data.runId!==a.runId||b.data.version!==(a.backupVersion||0))King.fail('백업이 변조되었거나 서버 최신 상태보다 오래되었습니다.');['cash','holdings','realized','started','playSeconds','achievements','statistics','tutorial','readNews','assetHistory','settings'].forEach(function(k){a[k]=King.clone(b.data[k]);});King.log(s,a,'백업 검증 복원',{version:b.data.version},t,env);return {restored:true};}
   if(r.action==='report'){var text=King.text(r.body,4000),email=King.text(r.email||'',200);if(!text||email&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))King.fail('내용과 이메일을 확인해 주세요.');var id=env.id();s.reports[id]={id,accountId:a.id,type:r.kind==='suggestion'?'기능 제안':'오류 신고',body:text,email,at:t,time:King.stamp(t),status:'접수',environment:King.text(r.environment||'',300)};return {reportId:id};}
   King.fail('지원하지 않는 요청입니다.');
 };

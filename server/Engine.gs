@@ -30,8 +30,9 @@ King.catalog = function(t) {
   var stocks={}; rows.forEach(function(r,i){stocks[r[0]]={id:r[0],name:r[1],sector:r[2],price:r[3],base:r[3],fundamental:r[3],pressure:0,market:i<12?'KOSPI':'KOSDAQ',status:'상장',listed:King.date(t),high:r[3],low:r[3],float:10000000+i*1700000,liquidity:200000000,description:descriptions[r[2]],history:[[Math.floor(t/60000)*60000,r[3]]],financials:[{at:t,revenue:100000000000*(i+1),profit:10000000000*(i+1),debt:30000000000*(i+1)}]};});return stocks;
 };
 King.initial = function(t) {return {schema:1,revision:0,market:{minute:Math.floor(t/60000),date:King.date(t),stocks:King.catalog(t),flows:[],news:[],economy:{rate:3,inflation:2.3,activity:100},calendar:[]},accounts:{},sessions:{},quotes:{},requests:{},orders:{},receipts:{},records:{},claims:{},announcements:{},reports:{},audits:{},adminSessions:{},proxies:{},maintenance:{enabled:false,reason:'',until:''}};};
-King.log = function(s,a,type,data,t,env) {var id=env.id();s.records[id]={id,accountId:a.id,runId:a.runId,day:King.day(a,t),at:t,time:King.stamp(t),type,data};return id;};
+King.log = function(s,a,type,data,t,env) {a.backupVersion=(a.backupVersion||0)+1;var id=env.id();s.records[id]={id,accountId:a.id,runId:a.runId,day:King.day(a,t),at:t,time:King.stamp(t),type,data};return id;};
 King.advance = function(s,t,env) {
+  if(!s.market.seed)s.market.seed=env.sign('market-seed:'+s.market.minute);
   var end=Math.min(Math.floor(t/60000),s.market.minute+360),m=s.market;
   while(m.minute<end){m.minute++;var at=m.minute*60000,date=King.date(at);
     if(date!==m.date){Object.values(m.stocks).forEach(function(x){x.base=x.price;});m.date=date;}
@@ -41,7 +42,7 @@ King.advance = function(s,t,env) {
       var net={};m.flows.filter(function(f){return f.symbol===x.id;}).forEach(function(f){net[f.accountId]=(net[f.accountId]||0)+f.amount;});
       var target=Object.keys(net).length>=3?Math.max(-.05,Math.min(.05,Object.values(net).reduce(function(v,n){return v+Math.max(-x.liquidity*.02,Math.min(x.liquidity*.02,n));},0)/x.liquidity)):0;
       x.pressure=x.pressure*.8+target*.2;
-      var shock=(King.random(x.id+':'+m.minute)-.5)*.003+(x.trend||0)*.0001;
+      var shock=(King.random(m.seed+':'+x.id+':'+m.minute)-.5)*.003+(x.trend||0)*.0001;
       x.fundamental=Math.max(1,x.fundamental*(1+shock));
       x.price=Math.max(Math.ceil(x.base*.7),Math.min(Math.floor(x.base*1.3),Math.round(x.fundamental*(1+x.pressure))));
       x.price=Math.max(1,x.price);x.high=Math.max(x.high,x.price);x.low=Math.min(x.low,x.price);x.history.push([at,x.price]);
@@ -58,7 +59,7 @@ King.snapshot = function(s,a,t,proxy) {
   var claims=Object.values(s.claims).filter(function(c){return c.accountId===a.id&&c.status==='대기'&&(c.reward||c.runId===a.runId);});
   var dividends=claims.filter(function(c){return !c.reward;}).reduce(function(v,c){return v+c.net;},0);
   var stocks=Object.values(s.market.stocks).map(function(x){var v=King.clone(x);v.history=v.history.slice(-240);if(King.day(a,t)<2)delete v.financials;if(v.fund&&King.day(a,t)<4){delete v.fund;delete v.history;}return v;});
-  return {revision:s.revision,serverTime:t,marketTime:s.market.minute*60000,catchingUp:s.market.minute<Math.floor(t/60000),day:King.day(a,t),account:{id:a.id,name:a.name,runId:a.runId,started:a.started,joined:a.joined,cash:a.cash,realized:a.realized,playSeconds:a.playSeconds,lifetimeSeconds:a.lifetimeSeconds,logins:a.logins,lastLogin:a.lastLogin,settings:a.settings,tutorial:a.tutorial,achievements:a.achievements,statistics:a.statistics},holdings,stocks,news:s.market.news.slice(-80).reverse(),readNews:a.readNews,availableCash:a.cash-King.lockedCash(s,a),stockValue,etfValue,dividends,total:a.cash+stockValue+etfValue+dividends,claims,orders:Object.values(s.orders).filter(function(o){return o.accountId===a.id&&o.runId===a.runId;}).slice(-100).reverse(),announcements:Object.values(s.announcements).filter(function(n){return n.status==='게시'&&(n.targets==='all'||n.targets.indexOf(a.id)>=0);}).map(function(n){return {id:n.id,title:n.title,body:n.body,at:n.at};}),economy:King.day(a,t)>=3?s.market.economy:null,assetHistory:a.assetHistory,admin:!!proxy||false,proxy:proxy?{name:a.name,id:a.id}:null};
+  return {revision:s.revision,serverTime:t,marketTime:s.market.minute*60000,catchingUp:s.market.minute<Math.floor(t/60000),day:King.day(a,t),account:{id:a.id,name:a.name,runId:a.runId,started:a.started,joined:a.joined,cash:a.cash,realized:a.realized,playSeconds:a.playSeconds,lifetimeSeconds:a.lifetimeSeconds,logins:a.logins,lastLogin:a.lastLogin,settings:a.settings,tutorial:a.tutorial,achievements:a.achievements,statistics:a.statistics},holdings,stocks,news:s.market.news.slice(-80).reverse(),readNews:a.readNews,availableCash:a.cash-King.lockedCash(s,a),stockValue,etfValue,dividends,total:a.cash+stockValue+etfValue+dividends,claims,orders:Object.values(s.orders).filter(function(o){return o.accountId===a.id&&o.runId===a.runId;}).slice(-100).reverse().map(function(o){var v=King.clone(o);delete v.admin;return v;}),announcements:Object.values(s.announcements).filter(function(n){return n.status==='게시'&&(n.targets==='all'||n.targets.indexOf(a.id)>=0);}).map(function(n){return {id:n.id,title:n.title,body:n.body,at:n.at};}),economy:King.day(a,t)>=3?s.market.economy:null,assetHistory:a.assetHistory,admin:!!proxy||false,proxy:proxy?{name:a.name,id:a.id}:null};
 };
 King.execute = function(original,req,env) {
   var s=King.clone(original),t=env.now(),action=req.action;
@@ -72,7 +73,7 @@ King.execute = function(original,req,env) {
   if(action==='logout'){delete s.sessions[env.hash(req.token)];s.revision++;return {state:s,response:{ok:true}};}
   var ready=King.advance(s,t,env);
   if(!ready&&action!=='sync')return {state:s,response:{error:'MARKET_CATCHUP',message:'시장을 동기화하고 있습니다. 잠시 후 다시 시도해 주세요.',remaining:Math.floor(t/60000)-s.market.minute}};
-  var reads=['sync','quote','records','backup','adminOverview','adminPlayer'];
+  var reads=['sync','quote','records','receipt','backup','adminOverview','adminPlayer'];
   var mutation=reads.indexOf(action)<0;
   if(mutation&&!adminAction&&req.runId!==a.runId)King.fail('회차가 변경되었습니다. 다시 동기화해 주세요.');
   var requestKey;
@@ -88,6 +89,8 @@ King.execute = function(original,req,env) {
   else King.fail('지원하지 않는 요청입니다.');
   if(King.achievements)King.achievements(s,a,t,env);
   if(auth.proxy&&mutation)King.audit(s,auth.actor,a.id,action,{},result,t,env,'대리 조작');
+  if(mutation&&!adminAction)a.backupVersion=(a.backupVersion||0)+1;
+  if(result.order){result.order=King.clone(result.order);delete result.order.admin;}
   s.revision++;
   if(mutation)s.requests[requestKey]={action,accountId:a.id,at:t,result:King.clone(result)};
   if(action==='quote')s.quotes[result.quote.id]=result.quote;

@@ -1,7 +1,7 @@
 var King = typeof King === 'undefined' ? {} : King;
 King.newRun = function(a,t,env) {a.runId=env.id();a.started=t;a.cash=10000000;a.holdings={};a.realized=0;a.playSeconds=0;a.tutorial=false;a.achievements={};a.statistics={companies:[],industries:[],dates:[],memos:0};a.readNews=[];a.assetHistory=[];a.activityUntil=t;};
 King.login = function(s,r,env) {
-  var t=env.now(),name=King.text(r.name,30).normalize('NFC');
+  var t=env.now();if(typeof r.name!=='string'||r.name.length>30)King.fail('아이디는 한글 2~12자로 입력해 주세요.');var name=r.name.normalize('NFC');
   if(!/^[가-힣]{2,12}$/.test(name))King.fail('아이디는 한글 2~12자로 입력해 주세요.');
   if(typeof r.pin!=='string'||!/^\d{4}$/.test(r.pin))King.fail('PIN은 숫자 4자리입니다.');
   var a=Object.values(s.accounts).find(function(x){return x.name===name;});
@@ -32,6 +32,7 @@ King.activity = function(s,a,r,t,env) {
   a.lastSeen=t;
   // Only overlap of consecutive active heartbeats counts; never trust elapsed client seconds.
   if(r.active===true&&a.lastActive&&t-a.lastActive<=90000){var start=Math.max(a.lastActive,a.activityUntil||0),seconds=Math.max(0,Math.min(60,Math.floor((t-start)/1000)));a.playSeconds+=seconds;a.lifetimeSeconds+=seconds;a.activityUntil=t;}
+  if(r.active===true&&a.lastActive&&t>a.lastActive)a.backupVersion=(a.backupVersion||0)+1;
   a.lastActive=r.active===true?t:0;
   var date=King.date(t);if(r.active&&a.statistics.dates.indexOf(date)<0)a.statistics.dates.push(date);
 };
