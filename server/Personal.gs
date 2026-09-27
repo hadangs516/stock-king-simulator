@@ -1,8 +1,9 @@
 var King = typeof King === 'undefined' ? {} : King;
 King.backupData = function(a) {return {schema:1,accountId:a.id,runId:a.runId,version:a.backupVersion||0,cash:a.cash,holdings:a.holdings,realized:a.realized,started:a.started,playSeconds:a.playSeconds,achievements:a.achievements,statistics:a.statistics,tutorial:a.tutorial,readNews:a.readNews,assetHistory:a.assetHistory,settings:a.settings};};
 King.personal = function(s,a,r,t,env,auth) {
+  if(r.action==='priceAlert')return King.setPriceAlert(s,a,r,t,env);
   if(r.action==='receipt'){var receipt=s.receipts[r.id];if(!receipt||receipt.accountId!==a.id)King.fail('영수증을 찾을 수 없습니다.');return {receipt};}
-  if(r.action==='records'){var offset=King.int(r.offset||0,0,10000000);var list=Object.values(s.records).filter(function(v){return v.accountId===a.id;}).reverse();return {records:list.slice(offset,offset+30),next:offset+30<list.length?offset+30:null};}
+  if(r.action==='records'){var offset=King.int(r.offset||0,0,10000000);var list=Object.values(s.records).filter(function(v){return v.accountId===a.id;}).reverse();return {records:list.slice(offset,offset+30).map(function(v){var clean=King.clone(v);delete clean.data.admin;return clean;}),next:offset+30<list.length?offset+30:null};}
   if(r.action==='claim'){
     var selected=Object.values(s.claims).filter(function(c){return c.accountId===a.id&&c.status==='대기'&&(r.claimId==='all'||r.claimId===c.id);}),claimed=[],waiting=[];
     selected.forEach(function(c){if(!c.reward&&c.runId!==a.runId)return;if(c.payAt>t){waiting.push(c.id);return;}

@@ -4,7 +4,16 @@ King.lockedCash = function(s,a) {return Object.values(s.orders).filter(function(
 King.lockedQuantity = function(s,a,symbol) {return Object.values(s.orders).filter(function(o){return o.accountId===a.id&&o.runId===a.runId&&o.symbol===symbol&&o.status==='대기'&&o.kind!=='limitBuy';}).reduce(function(v,o){return v+o.quantity;},0);};
 King.instrument = function(s,a,id,t) {var x=s.market.stocks[id];if(!x||x.status!=='상장')King.fail('현재 거래할 수 없는 종목입니다.');if(x.market==='ETF'&&King.day(a,t)<4)King.fail('ETF는 DAY 4에 열립니다.');return x;};
 King.quote = function(s,a,r,t,env) {var x=King.instrument(s,a,r.symbol,t),q=King.int(r.quantity,1,100000000);if(['buy','sell'].indexOf(r.side)<0)King.fail('거래 방향을 확인해 주세요.');return {quote:Object.assign({id:env.id(),accountId:a.id,runId:a.runId,symbol:x.id,side:r.side,quantity:q,price:x.price,minute:s.market.minute,expires:t+20000},King.costs(x,r.side,q,x.price))};};
+King.validateSettlement = function(s,a,x,side,q,price) {
+  var c=King.costs(x,side,q,price),h=a.holdings[x.id];
+  if(side==='buy'){
+    if(a.cash-King.lockedCash(s,a)<c.net)King.fail('사용 가능한 현금이 부족합니다.');
+    King.int((h?h.quantity:0)+q,1,900000000000000);King.int((h?h.cost:0)+c.net,0,900000000000000);
+  }else if(!h||h.quantity-King.lockedQuantity(s,a,x.id)<q)King.fail('매도 가능한 수량이 부족합니다.');
+  King.int(a.cash+(side==='buy'?-c.net:c.net),0,900000000000000);
+};
 King.settle = function(s,a,x,side,q,price,t,env,orderId,memo,admin) {
+  King.validateSettlement(s,a,x,side,q,price);
   var c=King.costs(x,side,q,price),h=a.holdings[x.id];
   if(side==='buy'){
     if(a.cash-King.lockedCash(s,a)<c.net)King.fail('사용 가능한 현금이 부족합니다.');a.cash-=c.net;
@@ -43,7 +52,8 @@ King.fillOrders = function(s,t,env) {
     if(!hit)return;
     o.status='체결';o.closed=t;
     // Release this order's reservation before applying the fill; other reservations remain.
-    var receipt=King.settle(s,a,x,buy?'buy':'sell',o.quantity,x.price,t,env,o.id,'',o.admin);o.receiptId=receipt.id;
+    try{King.validateSettlement(s,a,x,buy?'buy':'sell',o.quantity,x.price);}catch(error){o.status='실패';o.reason=error.message;King.log(s,a,'예약 실패',o,t,env);return;}
+    var receipt=King.settle(s,a,x,buy?'buy':'sell',o.quantity,x.price,t,env,o.id,'',o.admin);o.receiptId=receipt.id;King.log(s,a,'예약 체결',o,t,env);
     if(o.kind==='oco'){o.filledLeg=x.price>=o.price?'익절':'손절';o.otherLeg='취소';}
   });
 };

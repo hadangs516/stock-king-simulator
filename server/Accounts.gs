@@ -1,5 +1,5 @@
 var King = typeof King === 'undefined' ? {} : King;
-King.newRun = function(a,t,env) {a.runId=env.id();a.started=t;a.cash=10000000;a.holdings={};a.realized=0;a.playSeconds=0;a.tutorial=false;a.achievements={};a.statistics={companies:[],industries:[],dates:[],memos:0};a.readNews=[];a.assetHistory=[];a.activityUntil=t;};
+King.newRun = function(a,t,env) {a.runId=env.id();a.started=t;a.cash=10000000;a.holdings={};a.realized=0;a.playSeconds=0;a.tutorial=false;a.achievements={};a.statistics={companies:[],industries:[],dates:[],memos:0};a.readNews=[];a.assetHistory=[];a.alerts=[];a.priceAlerts=[];a.activityUntil=t;};
 King.login = function(s,r,env) {
   var t=env.now();if(typeof r.name!=='string'||r.name.length>30)King.fail('아이디는 한글 2~12자로 입력해 주세요.');var name=r.name.normalize('NFC');
   if(!/^[가-힣]{2,12}$/.test(name))King.fail('아이디는 한글 2~12자로 입력해 주세요.');
@@ -17,7 +17,9 @@ King.login = function(s,r,env) {
   var token=env.id()+env.id()+env.id();s.sessions[env.hash(token)]={accountId:a.id,expires:t+(r.remember?30*King.DAY:12*3600000)};
   King.advance(s,t,env);if(King.achievements)King.achievements(s,a,t,env);s.revision++;
   var snapshot=King.snapshot(s,a,t);snapshot.admin=env.isAdmin(a.name);
-  return {state:s,response:{token,snapshot}};
+  var response={token,snapshot};
+  if(isAdmin){var proof=King.admin(s,a,{actor:a},{action:'adminUnlock',token,secret:r.adminSecret},env);response.adminToken=proof.adminToken;response.adminExpires=proof.expires;}
+  return {state:s,response};
 };
 King.authenticate = function(s,r,env) {
   if(typeof r.token!=='string')King.fail('로그인 인증이 필요합니다.');var session=s.sessions[env.hash(r.token)],t=env.now();
