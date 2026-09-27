@@ -6,14 +6,16 @@ import {AdminUI} from './admin-ui.js';
 import {sound,installApp,prepareInstall,installSuggestion,dismissInstall} from './platform.js';
 const $=selector=>document.querySelector(selector), main=$('#main'), modal=$('#modal');
 let snapshot=null,page='home',symbol=null,period='all',authMode='login',busy=false,syncing=null,pending=null,recordOffset=0,records=[];
+let changedOrders=new Set(),totalChanged=false,lastChartTime=0;
 let lastInput=Date.now(),receivedAt=0,toastAt=0,toastTimer,serverStatus='',lastCash=null,animationFrame;
 const pendingKey='king-pending-operation';
 function rememberPending(req){try{if(req&&['trade','order','cancel','claim'].includes(req.action))sessionStorage.setItem(pendingKey,JSON.stringify({accountId:snapshot?.account.id,...req}));else if(!req)sessionStorage.removeItem(pendingKey);}catch{}}
 const filter={market:'KOSPI',search:'',sort:'name',favorites:false};
+if(VERSION.endsWith('-local')){const note=document.createElement('p');note.className='footnote';note.textContent='로컬 테스트 · 서버 종료 시 테스트 데이터 삭제';$('#header').append(note);}
 const admin=new AdminUI({call:mutate,read:request,modal:showModal,close:()=>modal.close(),toast,navigate,apply,getSnapshot:()=>snapshot,api});
 function toast(text){clearTimeout(toastTimer);$('#toast').textContent=text;$('#toast').hidden=false;toastAt=Date.now();toastTimer=setTimeout(()=>$('#toast').hidden=true,4000);}
 $('#toast').onclick=()=>{if(Date.now()-toastAt>=1000)$('#toast').hidden=true;};
-function showModal(title,content){$('#modal-title').textContent=title;$('#modal-content').innerHTML=content;if(!modal.open)modal.showModal();}
+function showModal(title,content){modal.classList.toggle('trade-receipt',title.includes('영수증'));$('#modal-title').textContent=title;$('#modal-content').innerHTML=content;if(!modal.open)modal.showModal();}
 $('#modal-close').onclick=()=>modal.close();modal.addEventListener('click',event=>{if(event.target===modal){const box=modal.getBoundingClientRect();if(event.clientX<box.left||event.clientX>box.right||event.clientY<box.top||event.clientY>box.bottom)modal.close();}});
 function failure(error){showModal('확인이 필요해요',`<p class="error">${e(error.message)}</p>${pending?view.button('같은 요청으로 재시도','retry','','wide primary'):view.button('최신 상태 확인','sync','','wide')}`);}
 function connection(message){$('#connection').hidden=!message;$('#connection').innerHTML=message?`${e(message)}${view.button('재시도','retrySync')}`:'';}
@@ -21,13 +23,14 @@ async function request(action,data={}){return api.send(action,data);}
 function reduced(){return !snapshot?.account.settings.animation||matchMedia('(prefers-reduced-motion: reduce)').matches;}
 function apply(s){
  if(!s)return;if(snapshot&&s.revision<snapshot.revision)return;
- const previous=snapshot;snapshot=s;receivedAt=Date.now();document.body.classList.toggle('no-motion',!s.account.settings.animation);sound.settings(s.account.settings);
+ const previous=snapshot;totalChanged=!!previous&&previous.total!==s.total;changedOrders=new Set(previous?s.orders.filter(o=>o.status==='체결'&&previous.orders.some(p=>p.id===o.id&&p.status==='대기')).map(o=>o.id):[]);snapshot=s;document.body.classList.toggle('is-proxy',!!s.proxy);receivedAt=Date.now();document.body.classList.toggle('no-motion',!s.account.settings.animation);sound.settings(s.account.settings);
  if(!previous){try{const saved=JSON.parse(sessionStorage.getItem(pendingKey)||'null');if(saved&&saved.accountId===s.account.id)pending={action:saved.action,data:saved.data};}catch{}}
  $('#ticker').hidden=false;$('#nav').hidden=false;$('#proxy-banner').hidden=!s.proxy;$('#proxy-banner').textContent=s.proxy?'플레이어 시점: '+s.proxy.name:'';
  $('#ticker').innerHTML=`<button data-action="amount" data-value="${s.account.cash}"><small>현금 잔액</small><strong id="cash">${compact(s.account.cash)}</strong></button><div class="day"><small>나의 회차</small><strong>DAY ${s.day}</strong></div><div class="time"><small>다음 시세 확인</small><strong id="countdown">60초</strong></div>`;
  if(previous&&previous.account.id!==s.account.id)lastCash=null;
  if(lastCash!==null&&lastCash!==s.account.cash&&!document.hidden&&!reduced()){$('#cash').classList.add('changed');toast((s.account.cash-lastCash>0?'+':'')+money(s.account.cash-lastCash)+' · 현금 변동');}lastCash=s.account.cash;
  if(previous&&previous.account.runId===s.account.runId){const old=Object.keys(previous.account.achievements),fresh=Object.keys(s.account.achievements).filter(id=>!old.includes(id));if(fresh.length)toast('새 업적 달성 · '+view.achievementName(s.account.achievements[fresh[0]]));if(s.day>previous.day&&s.day<=4)toast('DAY '+s.day+' · 새로운 기능이 열렸습니다.');}
+ if(changedOrders.size)toast('✓ 예약 주문 '+changedOrders.size+'건 체결 완료');
  connection(s.catchingUp?'밀린 시장을 처리하고 있습니다. 거래는 동기화 후 가능합니다.':'');
  if(pending){$('#connection').hidden=false;$('#connection').innerHTML='이전 요청 결과를 확인해 주세요.'+view.button('같은 요청 재시도','retry');}
 }
@@ -49,7 +52,7 @@ function nav(){const tabs=[['home','홈'],['news','뉴스'],['market','거래소
 function render(){
  if(!snapshot)return renderLogin(serverStatus);if(page==='detail'&&!snapshot.stocks.some(x=>x.id===symbol))page='market';nav();const s=snapshot;
  const content={home:()=>view.home(s,period),market:()=>view.market(s,filter),news:()=>view.news(s),assets:()=>view.assets(s),settings:()=>view.settings(s),total:()=>view.total(s),orders:()=>view.orders(s),inbox:()=>view.inbox(s),achievements:()=>view.achievements(s),detail:()=>view.detail(s,s.stocks.find(x=>x.id===symbol)),economy:()=>economy(),records:()=>recordsView()};
- if(page==='admin'){admin.render();return;}main.innerHTML=(content[page]||content.home)()+(page==='home'?installSuggestion():'');if(s.account.settings.terms)main.querySelectorAll('.receipt span.muted').forEach(el=>{const term=Object.keys(terms).find(t=>el.textContent.includes(t));if(term){const b=document.createElement('button');b.type='button';b.className='link-button';b.dataset.action='help';b.dataset.term=term;b.textContent=el.textContent+' ⓘ';el.replaceWith(b);}});
+ if(page==='admin'){admin.render();return;}main.classList.toggle('market-updated',lastChartTime!==s.marketTime);lastChartTime=s.marketTime;main.innerHTML=(content[page]||content.home)()+(page==='home'?installSuggestion():'');if(page==='total'&&totalChanged)$('#total-number')?.classList.add('changed');main.querySelectorAll('[data-order]').forEach(el=>{if(changedOrders.has(el.dataset.order))el.classList.add('changed');});changedOrders.clear();if(s.account.settings.terms)main.querySelectorAll('.receipt span.muted').forEach(el=>{const term=Object.keys(terms).find(t=>el.textContent.includes(t));if(term){const b=document.createElement('button');b.type='button';b.className='link-button';b.dataset.action='help';b.dataset.term=term;b.textContent=el.textContent+' ⓘ';el.replaceWith(b);}});
 }
 function renderLogin(message=''){cancelAnimationFrame(animationFrame);$('#ticker').hidden=true;$('#nav').hidden=true;$('#proxy-banner').hidden=true;main.innerHTML=view.loginView(authMode,message);}
 function refreshMarketPrices(){document.querySelectorAll('.stock[data-symbol]').forEach(el=>{const x=snapshot.stocks.find(v=>v.id===el.dataset.symbol);if(!x)return;const price=el.querySelector('.stock-price strong'),delta=el.querySelector('.stock-price p'),value=(x.price/x.base-1)*100;price.textContent=money(x.price);delta.textContent=percent(value);delta.className=value>=0?'up':'down';});}
@@ -114,7 +117,7 @@ document.addEventListener('click',async event=>{
   if(action==='term')return help(target.dataset.name);
   if(action==='install')return installApp(showModal);
   if(action==='backup'){const r=await request('backup'),url=URL.createObjectURL(new Blob([JSON.stringify(r.backup,null,2)],{type:'application/json'})),a=document.createElement('a');a.href=url;a.download='주식왕_백업_'+stamp(snapshot.serverTime).slice(0,10)+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);return toast('PIN과 인증값을 제외한 백업을 내보냈습니다.');}
-  if(action==='restore'){const input=document.createElement('input');input.type='file';input.accept='.json,application/json';input.onchange=async()=>{try{const file=input.files[0];if(!file)return;if(file.size>50000)throw new Error('백업 파일이 너무 큽니다.');await mutate('restore',{backup:JSON.parse(await file.text())});toast('서버 최신 기록과 백업을 검증했습니다.');}catch(error){failure(error);}};input.click();return;}
+  if(action==='restore'){const input=document.createElement('input');input.type='file';input.accept='.json,application/json';input.onchange=async()=>{try{const file=input.files[0];if(!file)return;if(file.size>500000)throw new Error('백업 파일이 너무 큽니다.');await mutate('restore',{backup:JSON.parse(await file.text())});toast('서버 최신 기록과 백업을 검증했습니다.');}catch(error){failure(error);}};input.click();return;}
  }catch(error){failure(error);}
 });
 document.addEventListener('input',event=>{lastInput=Date.now();if(event.target.closest('#trade-form'))estimate();if(event.target.id==='search'){filter.search=event.target.value;const pos=event.target.selectionStart;render();$('#search').focus();try{$('#search').setSelectionRange(pos,pos);}catch{}}});

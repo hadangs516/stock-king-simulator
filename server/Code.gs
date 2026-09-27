@@ -2,7 +2,7 @@ function kingEnv_() {
   var properties=PropertiesService.getScriptProperties(),key=properties.getProperty('SIGNING_KEY');if(!key)throw new Error('서버 초기 설정이 필요합니다.');
   function hex(bytes){return bytes.map(function(b){return ('0'+((b+256)%256).toString(16)).slice(-2);}).join('');}
   function hash(value){return hex(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256,String(value),Utilities.Charset.UTF_8));}
-  return {now:function(){return Date.now();},id:function(){return Utilities.getUuid();},hash,sign:function(value){return hex(Utilities.computeHmacSha256Signature(value,key));},isAdmin:function(name){return (properties.getProperty('ADMIN_NAMES')||'').split(',').map(function(n){return n.trim();}).indexOf(name)>=0;},adminCheck:function(secret){var stored=properties.getProperty('ADMIN_SECRET_HASH');return !!stored&&typeof secret==='string'&&secret.length>=12&&hash(secret)===stored;}};
+  return {health:function(){return {lastTick:properties.getProperty('LAST_TICK_AT')||'미실행',tickMs:Number(properties.getProperty('LAST_TICK_MS')||0),lastStorageError:properties.getProperty('LAST_STORAGE_ERROR_AT')||null};},now:function(){return Date.now();},id:function(){return Utilities.getUuid();},hash,sign:function(value){return hex(Utilities.computeHmacSha256Signature(value,key));},isAdmin:function(name){return (properties.getProperty('ADMIN_NAMES')||'').split(',').map(function(n){return n.trim();}).indexOf(name)>=0;},adminCheck:function(secret){var stored=properties.getProperty('ADMIN_SECRET_HASH');return !!stored&&typeof secret==='string'&&secret.length>=12&&hash(secret)===stored;}};
 }
 function json_(data){return ContentService.createTextOutput(JSON.stringify(data)).setMimeType(ContentService.MimeType.JSON);}
 function doGet(){
@@ -17,7 +17,7 @@ function rateLimit_(r,env) {
 function doPost(e) {
   var lock=LockService.getScriptLock(),committing=false;
   try {
-    if(!e||!e.postData||e.postData.contents.length>60000)throw new Error('요청 크기를 확인해 주세요.');
+    if(!e||!e.postData||e.postData.contents.length>600000)throw new Error('요청 크기를 확인해 주세요.');
     var r=JSON.parse(e.postData.contents);if(!r||typeof r.action!=='string')throw new Error('요청 형식을 확인해 주세요.');
     if(!lock.tryLock(15000))return json_({error:'BUSY',message:'다른 요청 처리 중입니다. 같은 요청으로 다시 시도해 주세요.'});
     var env=kingEnv_();rateLimit_(r,env);var db=KingStore.open(),state=KingStore.read(db),out=King.execute(state,r,env);
@@ -25,6 +25,7 @@ function doPost(e) {
     return json_(Object.assign({service:'stock-king',version:1},out.response));
   }catch(error){
     // Never serialize request bodies, PINs or provider stack traces to the caller.
+    if(committing)try{PropertiesService.getScriptProperties().setProperty('LAST_STORAGE_ERROR_AT',King.stamp(Date.now()));}catch(ignored){}
     var message=String(error.message||'요청 처리 실패');
     if(/quota|Service|Exception|Sheets|Spreadsheet|JSON|TypeError|ReferenceError|property|undefined/i.test(message))message='서버 처리 또는 저장에 실패했습니다. 같은 요청으로 재시도해 주세요.';
     return json_({error:committing?'COMMIT_UNKNOWN':'REQUEST_FAILED',message:committing?'저장 결과를 확인하지 못했습니다. 같은 요청으로 재시도해 주세요.':message});

@@ -30,7 +30,7 @@ King.catalog = function(t) {
   var stocks={}; rows.forEach(function(r,i){stocks[r[0]]={id:r[0],name:r[1],sector:r[2],price:r[3],base:r[3],fundamental:r[3],pressure:0,market:i<12?'KOSPI':'KOSDAQ',status:'상장',listed:King.date(t),high:r[3],low:r[3],float:10000000+i*1700000,liquidity:200000000,description:descriptions[r[2]],history:[[Math.floor(t/60000)*60000,r[3]]],financials:[{at:t,revenue:100000000000*(i+1),profit:10000000000*(i+1),debt:30000000000*(i+1)}]};});return stocks;
 };
 King.initial = function(t) {return {schema:1,revision:0,market:{minute:Math.floor(t/60000),date:King.date(t),stocks:King.catalog(t),flows:[],news:[],economy:{rate:3,inflation:2.3,activity:100},calendar:[]},accounts:{},sessions:{},quotes:{},requests:{},orders:{},receipts:{},records:{},claims:{},announcements:{},reports:{},audits:{},adminSessions:{},proxies:{},maintenance:{enabled:false,reason:'',until:''}};};
-King.log = function(s,a,type,data,t,env) {a.backupVersion=(a.backupVersion||0)+1;var id=env.id();if(King.addAlert&&/^예약 (체결|실패|만료)/.test(type))King.addAlert(a,id,'orders',type,(s.market.stocks[data.symbol]||{}).name||'예약 상태가 변경되었습니다.',t,data.symbol);s.records[id]={id,accountId:a.id,runId:a.runId,day:King.day(a,t),at:t,time:King.stamp(t),type,data};return id;};
+King.log = function(s,a,type,data,t,env) {a.backupVersion=(a.backupVersion||0)+1;var id=env.id();if(King.addAlert&&/^예약 (체결|실패|만료)/.test(type))King.addAlert(a,id,'orders',type,(s.market.stocks[data.symbol]||{}).name||'예약 상태가 변경되었습니다.',t,data.symbol);s.records[id]={id,accountId:a.id,runId:a.runId,day:King.day(a,t),at:t,time:King.stamp(t),type,data:King.clone(data)};return id;};
 King.advance = function(s,t,env) {
   if(!s.market.seed)s.market.seed=env.sign('market-seed:'+s.market.minute);
   var end=Math.min(Math.floor(t/60000),s.market.minute+360),m=s.market;
@@ -89,8 +89,8 @@ King.execute = function(original,req,env) {
   if(action==='sync'){if(!auth.proxy)King.activity(s,a,req,t,env);}
   else if(adminAction)result=King.admin(s,a,auth,req,env);
   else if(action==='quote')result=King.quote(s,a,req,t,env);
-  else if(action==='trade')result=King.trade(s,a,req,t,env,!!auth.proxy);
-  else if(action==='order')result=King.order(s,a,req,t,env,!!auth.proxy);
+  else if(action==='trade')result=King.trade(s,a,req,t,env,env.isAdmin(auth.actor.name));
+  else if(action==='order')result=King.order(s,a,req,t,env,env.isAdmin(auth.actor.name));
   else if(action==='cancel')result=King.cancel(s,a,req,t,env);
   else if(King.personal)result=King.personal(s,a,req,t,env,auth);
   else King.fail('지원하지 않는 요청입니다.');

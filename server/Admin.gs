@@ -12,7 +12,7 @@ King.admin = function(s,a,auth,r,env) {
   if(r.action==='adminOverview'){
     var filter=King.text(r.search||'',30),offset=King.int(r.offset||0,0,10000000),players=Object.values(s.accounts).filter(function(u){return u.name.indexOf(filter)>=0;}).map(function(u){var v=King.snapshot(s,u,t);return {id:u.id,name:u.name,cash:u.cash,total:v.total,joined:u.joined,lastLogin:u.lastLogin,lastSeen:u.lastSeen,logins:u.logins,lifetimeSeconds:u.lifetimeSeconds,restricted:u.restricted||null};});
     var sort=['name','cash','total','lastSeen','joined','lifetimeSeconds'].indexOf(r.sort)>=0?r.sort:'name';players.sort(function(a,b){return sort==='name'?a.name.localeCompare(b.name):b[sort]-a[sort];});
-    return {players:players.slice(offset,offset+30),next:offset+30<players.length?offset+30:null,count:Object.keys(s.accounts).length,filteredCount:players.length,marketTime:s.market.minute*60000,active:Object.values(s.accounts).filter(function(p){return p.lastSeen>t-300000;}).length,receiptCount:Object.keys(s.receipts).length,reports:Object.values(s.reports).slice(-100).reverse(),notices:Object.values(s.announcements).slice(-100).reverse(),audits:Object.values(s.audits).slice(-100).reverse(),maintenance:s.maintenance};
+    return {players:players.slice(offset,offset+30),next:offset+30<players.length?offset+30:null,count:Object.keys(s.accounts).length,filteredCount:players.length,marketTime:s.market.minute*60000,active:Object.values(s.accounts).filter(function(p){return p.lastSeen>t-300000;}).length,receiptCount:Object.keys(s.receipts).length,reports:Object.values(s.reports).slice(-100).reverse(),notices:Object.values(s.announcements).slice(-100).reverse(),audits:Object.values(s.audits).slice(-100).reverse(),maintenance:s.maintenance,health:env.health?env.health():null};
   }
   var target=r.targetId?s.accounts[r.targetId]:null;
   if(r.targetId&&!target)King.fail('플레이어를 찾을 수 없습니다.');
@@ -22,7 +22,7 @@ King.admin = function(s,a,auth,r,env) {
     var proxyToken=env.id()+env.id();s.proxies[env.hash(proxyToken)]={actorId:actor.id,targetId:target.id,adminProof:env.hash(r.adminToken),expires:t+900000};King.audit(s,actor,target.id,'대리 시작',{}, {},t,env,'플레이어 시점');return {proxyToken};
   }
   if(r.action==='adminReturn'){Object.keys(s.proxies).forEach(function(k){if(s.proxies[k].actorId===actor.id)delete s.proxies[k];});return {};}
-  var reason=King.text(r.reason||'',500),before={},after={},targets;
+  var reason=King.text(r.reason||'',500),before={},after={},targets,auditTarget;
   if(r.action==='adminNotice'){
     targets=r.targets==='all'?'all':King.targets(s,r.targets);if(['초안','게시','내림'].indexOf(r.status)<0)King.fail('공지 상태를 확인해 주세요.');
     var title=King.text(r.title,100),body=King.text(r.body,4000);if(!title||!body)King.fail('제목과 내용을 입력해 주세요.');var id=r.noticeId||env.id();before=s.announcements[id]||{};after={id,title,body,targets,status:r.status,at:t};s.announcements[id]=after;
@@ -56,15 +56,15 @@ King.admin = function(s,a,auth,r,env) {
     else if(r.operation==='halt'){x.status='거래정지';King.news(s,x,x.name+' 거래정지','운영상 거래가 정지되었습니다.',t,0,env);}else if(r.operation==='resume'){if(x.status==='비상장')King.fail('폐지된 종목은 거래 재개할 수 없습니다.');x.status='상장';}
     else if(r.operation==='delist'){if(x.fund)King.fail('ETF 상장폐지는 펀드 청산 계획이 필요합니다.');x.delistAt=King.int(r.at,t+72*3600000,t+365*King.DAY);x.settlement=r.settlement===null?null:King.int(r.settlement,0,x.price);King.news(s,x,x.name+' 상장폐지 확정','최소 72시간 거래 기회 후 '+King.stamp(x.delistAt)+' 폐지 예정. '+(x.settlement===null?'비상장 보유로 전환됩니다.':'주당 회수금 '+x.settlement+'원입니다.'),t,0,env);}
     else if(r.operation==='split'){if(x.fund)King.fail('ETF 분할은 지원하지 않습니다.');var ratio=King.int(r.ratio,2,100);if(x.price%ratio||x.base%ratio)King.fail('평가액 보존을 위해 현재가와 기준가가 분할 비율로 나누어지는 경우에만 분할할 수 있습니다.');x.price=Math.max(1,Math.round(x.price/ratio));x.base=Math.max(1,Math.round(x.base/ratio));x.fundamental/=ratio;x.float*=ratio;x.high/=ratio;x.low/=ratio;x.history=x.history.map(function(p){return [p[0],p[1]/ratio];});Object.values(s.accounts).forEach(function(u){if(u.holdings[x.id])u.holdings[x.id].quantity*=ratio;});Object.values(s.market.stocks).filter(function(v){return v.fund;}).forEach(function(v){if(v.fund.positions[x.id])v.fund.positions[x.id]*=ratio;});Object.values(s.orders).filter(function(o){return o.symbol===x.id&&o.status==='대기';}).forEach(function(o){o.status='취소';King.log(s,s.accounts[o.accountId],'분할로 예약 취소',o,t,env);});King.news(s,x,x.name+' 주식 분할',ratio+'대 1 분할. 보유 수량이 조정되며 예약 주문은 취소됩니다.',t,0,env);}
-    else King.fail('시장 작업을 확인해 주세요.');after=King.clone(x);
+    else if(['listing','financial','dividend'].indexOf(r.operation)>=0)x=King.corporate(s,x,r,t,env);else King.fail('시장 작업을 확인해 주세요.');after=King.clone(x);auditTarget=x.id;if(r.operation==='listing')before={};
   }else if(r.action==='adminNews'){
-    var newsTitle=King.text(r.title,100),fact=King.text(r.body,4000);if(!newsTitle||!fact)King.fail('제목과 내용을 입력해 주세요.');King.news(s,s.market.stocks[r.symbol]||null,newsTitle,fact,t,0,env);after={title:newsTitle,body:fact};
+    var newsTitle=King.text(r.title,100),fact=King.text(r.body,4000);if(!newsTitle||!fact)King.fail('제목과 내용을 입력해 주세요.');if(r.newsId){var existing=s.market.news.find(function(n){return n.id===r.newsId;});if(!existing)King.fail('수정할 뉴스를 찾을 수 없습니다.');before=King.clone(existing);existing.title=newsTitle;existing.fact=fact;existing.updatedAt=t;existing.symbol=r.symbol||null;}else King.news(s,s.market.stocks[r.symbol]||null,newsTitle,fact,t,0,env);after={title:newsTitle,body:fact};
   }else if(r.action==='adminEconomy'){
     before=s.market.economy;after={rate:King.int(r.rate,0,3000)/100,inflation:King.int(r.inflation,-1000,10000)/100,activity:King.int(r.activity,0,200)};s.market.economy=after;
   }else if(r.action==='adminReport'){
     var report=s.reports[r.reportId];if(!report||['접수','검토','채택','종료'].indexOf(r.status)<0)King.fail('제보 상태를 확인해 주세요.');before=King.clone(report);report.status=r.status;after=report;
   }else King.fail('지원하지 않는 관리자 작업입니다.');
-  King.audit(s,actor,r.targetId||targets||r.symbol||'전체',r.action,before,after,t,env,reason);return {ok:true,result:after};
+  King.audit(s,actor,auditTarget||r.targetId||targets||r.symbol||'전체',r.action,before,after,t,env,reason);return {ok:true,result:after};
 };
 
 King.proxyState = function(s,a){return King.clone({cash:a.cash,holdings:a.holdings,settings:a.settings,achievements:a.achievements,orders:Object.values(s.orders).filter(function(v){return v.accountId===a.id;}),claims:Object.values(s.claims).filter(function(v){return v.accountId===a.id;})});};

@@ -1,5 +1,5 @@
 const {test}=require('node:test'),assert=require('node:assert/strict');
-const {harness,signup}=require('./engine.test.cjs');
+const {harness,signup}=require('./helpers.cjs');
 test('maintenance login carries the strengthened proof into subsequent requests',()=>{
  const h=harness();signup(h,'운영자');h.s.maintenance={enabled:true,reason:'검사',until:''};
  const r=h.call('login',{name:'운영자',pin:'0123',adminSecret:'test-only-admin'});
@@ -35,4 +35,37 @@ test('target alerts fire once, stay account private, and reset with the run',()=
  h.advance(60000);snap=h.call('sync',auth).snapshot;assert.equal(snap.alerts.filter(n=>n.kind==='targets').length,1);
  assert.equal(h.call('sync',{token:other.token}).snapshot.alerts.length,0);
  assert.equal(h.call('reset',{...auth,requestId:'target-reset',pin:'0123'}).snapshot.priceAlerts.length,0);
+});
+test('corporate controls validate listing, financials, dividends and preserve source news in audits',()=>{
+ const h=harness(),a=signup(h,'운영자'),proof=h.call('adminUnlock',{token:a.token,requestId:'unlock-ops',secret:'test-only-admin'}),auth={token:a.token,adminToken:proof.adminToken};
+ h.call('adminMarket',{...auth,requestId:'listing-ops',symbol:'005930',operation:'listing',listingSymbol:'012345',name:'검증기업',sector:'반도체',market:'KOSDAQ',price:10000,reason:'검증'});
+ assert.equal(h.s.market.stocks['012345'].price,10000);
+ h.call('adminMarket',{...auth,requestId:'financial-ops',symbol:'012345',operation:'financial',revenue:10000,profit:-20,debt:100,reason:'검증'});
+ assert.equal(h.s.market.stocks['012345'].financials.at(-1).profit,-20);
+ h.call('adminMarket',{...auth,requestId:'dividend-ops',symbol:'012345',operation:'dividend',perShare:100,reason:'검증'});
+ assert.equal(h.s.market.stocks['012345'].dividendOverride,100);
+ const n=h.s.market.news[0];h.call('adminNews',{...auth,requestId:'news-edit-ops',newsId:n.id,symbol:n.symbol,title:'정정 제목',body:'정정 사실',reason:'검증'});
+ assert.equal(h.s.market.news[0].fact,'정정 사실');assert.ok(Object.values(h.s.audits).some(a=>a.before.fact===n.fact));
+ assert.throws(()=>h.call('adminMarket',{...auth,requestId:'split-reject',symbol:'012345',operation:'split',ratio:3,reason:'검증'}),/평가액/);
+});
+test('macro input affects future prices while same state catches up deterministically',()=>{
+ const h=harness();h.advance(120000);const a=h.K.initial(h.now),b=structuredClone(a);b.market.economy.rate=30;
+ h.K.advance(a,h.now+600000,h.env);h.K.advance(b,h.now+600000,h.env);
+ assert.ok(b.market.stocks['005930'].price<a.market.stocks['005930'].price);
+});
+test('backup created when a new asset achievement unlocks is immediately usable',()=>{
+ const h=harness(),r=signup(h),auth={token:r.token,runId:r.snapshot.account.runId};h.s.accounts[r.snapshot.account.id].cash=20000000;
+ const b=h.call('backup',auth).backup;assert.equal(h.call('restore',{...auth,requestId:'new-achievement-backup',backup:b}).restored,true);
+});
+test('logout revokes the server session even during maintenance',()=>{
+ const h=harness(),r=signup(h);h.s.maintenance.enabled=true;h.call('logout',{token:r.token});h.s.maintenance.enabled=false;
+ assert.throws(()=>h.call('sync',{token:r.token}),/인증/);
+});
+test('administrator own-account trades also stay out of player price pressure',()=>{
+ const h=harness(),a=signup(h,'운영자'),q=h.call('quote',{token:a.token,symbol:'005930',side:'buy',quantity:1});
+ h.call('trade',{token:a.token,runId:a.snapshot.account.runId,requestId:'admin-own-trade',quoteId:q.quote.id});
+ assert.equal(h.s.market.flows.length,0);
+ const user=signup(h,'일반투자자'),uq=h.call('quote',{token:user.token,symbol:'005930',side:'buy',quantity:1});
+ h.call('trade',{token:user.token,runId:user.snapshot.account.runId,requestId:'player-own-trade',quoteId:uq.quote.id});
+ assert.equal(h.s.market.flows.length,1);
 });
