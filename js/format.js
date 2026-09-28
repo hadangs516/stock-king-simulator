@@ -7,7 +7,7 @@ export function compact(value) {
   if (n < 1e12) return sign + Math.floor(n/1e8).toLocaleString('ko-KR') + '억 ' + (Math.floor(n%1e8/10000) ? Math.floor(n%1e8/10000).toLocaleString('ko-KR') + '만원' : '원');
   return sign + Math.floor(n/1e12).toLocaleString('ko-KR') + '조 ' + (Math.floor(n%1e12/1e8) ? Math.floor(n%1e12/1e8).toLocaleString('ko-KR') + '억원' : '원');
 }
-export const stamp = value => value ? new Date(value + 32400000).toISOString().slice(0,19).replace('T',' ') : '—';
+export const stamp = (value,seconds=false) => value ? new Date(value + 32400000).toISOString().slice(0,seconds?19:16).replace('T',' ') : '—';
 export const percent = value => (value > 0 ? '+' : '') + (Number(value) || 0).toFixed(2) + '%';
 export const change = x => (x.price / x.base - 1) * 100;
 export function chart(points, label = '가격 흐름', markers = []) {
