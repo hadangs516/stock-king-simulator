@@ -15,7 +15,7 @@ test('delisting cash recovery is credited to ETF backing exactly once',()=>{
 test('signed latest backup restores in place and cannot be replayed or tampered',()=>{
  const h=harness(),r=signup(h),auth={token:r.token,runId:r.snapshot.account.runId};const b=h.call('backup',auth).backup;
  h.s.accounts[r.snapshot.account.id].cash=999;
- assert.equal(h.call('restore',{...auth,backup:b,requestId:'restore-valid'}).snapshot.account.cash,10000000);
+ assert.equal(h.call('restore',{...auth,backup:b,requestId:'restore-valid'}).snapshot.account.cash,1000000);
  assert.throws(()=>h.call('restore',{...auth,backup:b,requestId:'restore-replay'}),/백업/);
  const altered=h.call('backup',auth).backup;altered.data.cash++;
  assert.throws(()=>h.call('restore',{...auth,backup:altered,requestId:'restore-forged'}),/백업/);
@@ -23,7 +23,7 @@ test('signed latest backup restores in place and cannot be replayed or tampered'
 test('one unfillable reservation fails without blocking another account or mutating holdings',()=>{
  const h=harness(),r=signup(h),a=h.s.accounts[r.snapshot.account.id],x=h.s.market.stocks['005930'];
  a.cash=0;a.holdings[x.id]={quantity:1,cost:2,since:h.now};x.price=1;
- h.s.orders.bad={id:'bad',accountId:a.id,runId:a.runId,symbol:x.id,kind:'stop',quantity:1,price:2,at:h.now-1,status:'대기'};
+ h.s.orders.bad={id:'bad',accountId:a.id,runId:a.runId,symbol:x.id,kind:'stop',quantity:2,price:2,at:h.now-1,status:'대기'};
  const other=signup(h,'다른투자자'),b=h.s.accounts[other.snapshot.account.id],y=h.s.market.stocks['000660'];b.holdings[y.id]={quantity:1,cost:100,since:h.now};
  h.s.orders.good={id:'good',accountId:b.id,runId:b.runId,symbol:y.id,kind:'limitSell',quantity:1,price:1,at:h.now-1,status:'대기'};
  h.K.fillOrders(h.s,h.now,h.env);const current=h.s.accounts[a.id];assert.equal(h.s.orders.bad.status,'실패');assert.equal(current.cash,0);assert.equal(current.holdings[x.id].quantity,1);assert.equal(h.s.orders.good.status,'체결');

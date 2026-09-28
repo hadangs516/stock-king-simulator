@@ -16,3 +16,5 @@ body{color:#17243a;word-break:keep-all;overflow-wrap:break-word}button{color:#26
 @media(max-width:359px){main{padding:18px 14px}.is-auth main{padding:18px}.auth h1{font-size:23px}.stock{padding:12px}.row{flex-wrap:wrap}}
 
 #request-loading{margin:0;width:100vw;height:100dvh;border:0;padding:0;max-width:none;max-height:none}#request-loading::backdrop{background:none}
+
+.friend-card{padding:16px;margin-top:10px;border:1px solid #dce8fa;border-radius:12px;background:#f3f7ff}.friend-card>.row{margin-top:10px;flex-wrap:wrap}.friend-stat{display:flex;justify-content:space-between;padding:15px;background:#f2f6fc;border-radius:10px;margin:8px 0}#friend-search{min-width:0}#friend-search-form button{flex-shrink:0}.card>summary{cursor:pointer;font-weight:600}
