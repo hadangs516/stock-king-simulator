@@ -36,3 +36,11 @@ body{color:#17243a;word-break:keep-all;overflow-wrap:break-word}button{color:#26
 .badge-medal{display:grid;place-items:center;background:#ffc744;color:#7b4e00;width:48px;height:48px;border-radius:50%;font-size:28px;flex-shrink:0}.badge-celebration strong{display:block;margin-top:5px}
 @keyframes badge-arrive{from{opacity:0;transform:translate(-50%,-20px) scale(.95)}to{opacity:1;transform:translate(-50%,0) scale(1)}}
 @media(prefers-reduced-motion:reduce){.badge-celebration{animation:none}}.no-motion .badge-celebration{animation:none}
+
+/* Feedback uses confirmed ledger values; reduced motion retains the result. */
+.page-in{animation:page-slide .24s ease-out}
+@keyframes page-slide{from{opacity:.45;transform:translateX(calc(var(--page-direction,1)*24px))}to{opacity:1;transform:translateX(0)}}
+.reward-coin{position:fixed;z-index:10000;pointer-events:none;display:grid;place-items:center;width:28px;height:28px;border:2px solid #d29500;border-radius:50%;background:#ffda43;color:#785400;font-weight:900;box-shadow:0 2px 5px #72530044}
+.reward-gain{position:fixed;z-index:10001;pointer-events:none;background:#124d32;color:white;padding:7px 12px;border-radius:12px;font-weight:800;animation:gain .3s ease-out}
+@keyframes gain{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+@media(prefers-reduced-motion:reduce){.page-in,.reward-gain{animation:none}}

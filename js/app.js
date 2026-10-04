@@ -3,6 +3,8 @@ import {VERSION} from './config.js';
 import {escape as e,money,compact,stamp,percent,icon,maxBuyQuantity} from './format.js';
 import * as view from './views.js';
 import {OptimisticActions} from './optimistic.js';
+import {BrowserPreferences} from './preferences.js';
+import {animateMoney,rewardFlight} from './motion.js';
 import {FriendsUI} from './friends-ui.js';
 import {AdminUI} from './admin-ui.js';
 import {sound,installApp,prepareInstall,installSuggestion,dismissInstall} from './platform.js';
@@ -12,6 +14,8 @@ let article=null,newsReturn='news';
 let changedOrders=new Set(),totalChanged=false,lastChartTime=0;
 let lastInput=Date.now(),receivedAt=0,toastAt=0,toastTimer,serverStatus='',lastCash=null,animationFrame;
 const pendingKey='king-pending-operation';
+let preferenceStorage;try{preferenceStorage=localStorage;}catch{}
+const browserPreferences=new BrowserPreferences(preferenceStorage);
 function rememberPending(req){try{if(req&&['trade','order','cancel','claim'].includes(req.action))sessionStorage.setItem(pendingKey,JSON.stringify({accountId:snapshot?.account.id,...req}));else if(!req)sessionStorage.removeItem(pendingKey);}catch{}}
 const filter={market:'KOSPI',search:'',sort:'name',favorites:false};
 if(VERSION.endsWith('-local')){const note=document.createElement('p');note.className='footnote';note.textContent='로컬 테스트 · 서버 종료 시 테스트 데이터 삭제';$('#header').append(note);}
@@ -20,7 +24,11 @@ const friendsUI=new FriendsUI({context:()=>api.token+'|'+api.proxyToken,call:mut
 const optimistic=new OptimisticActions({context:()=>api.token+'|'+api.proxyToken+'|'+confirmedSnapshot?.account.runId,send:request,changed:()=>{if(confirmedSnapshot){apply(confirmedSnapshot,false);renderAfterPreference();}},confirmed:s=>{apply(s);renderAfterPreference();},failed:error=>{toast(error.message+' 설정을 다시 확인합니다.');void sync();}});
 function renderAfterPreference(){document.querySelectorAll('#settings-form input').forEach(input=>{if(!snapshot)return;const value=snapshot.account.settings[input.name];if(input.type==='checkbox')input.checked=!!value;else if(!input.matches(':active'))input.value=value;});if(!modal.open&&!['INPUT','TEXTAREA','SELECT'].includes(document.activeElement?.tagName))render();}
 function localAction(action,data,patch){optimistic.enqueue(action,{...data,runId:snapshot.account.runId,requestId:crypto.randomUUID()},patch);}
-function savePreferences(settings){localAction('settings',{settings},s=>Object.assign(s.account.settings,settings));}
+function savePreferences(settings){
+ const local={},server={};for(const [key,value] of Object.entries(settings))(['bgm','sfx','terms','animation'].includes(key)?local:server)[key]=value;
+ if(Object.keys(local).length){Object.assign(snapshot.account.settings,browserPreferences.write(snapshot.account.id,local,snapshot.account.settings));sound.settings(snapshot.account.settings);}
+ if(Object.keys(server).length)localAction('settings',{settings:server},s=>Object.assign(s.account.settings,server));
+}
 function toast(text){clearTimeout(toastTimer);$('#toast').textContent=text;$('#toast').hidden=false;toastAt=Date.now();toastTimer=setTimeout(()=>$('#toast').hidden=true,4000);}
 function celebrate(achievement,count){
  sound.effect('achievement');document.querySelector('.badge-celebration')?.remove();
@@ -34,11 +42,14 @@ function showModal(title,content){const receipt=title.includes('영수증');moda
 $('#modal-close').onclick=()=>modal.close();modal.addEventListener('click',event=>{if(event.target===modal){const box=modal.getBoundingClientRect();if(event.clientX<box.left||event.clientX>box.right||event.clientY<box.top||event.clientY>box.bottom)modal.close();}});
 function failure(error){showModal('확인이 필요해요',`<p class="error">${e(error.message)}</p>${pending?view.button('같은 요청으로 재시도','retry','','wide primary'):view.button('최신 상태 확인','sync','','wide')}`);}
 function connection(message){$('#connection').hidden=!message;$('#connection').innerHTML=message?`${e(message)}${view.button('재시도','retrySync')}`:'';}
-let foregroundRequests=0, loadingTimer;
+let foregroundRequests=0, loadingTimer;const requestLabels=[];
+function processingLabel(action,data){const names={records:'로그 확인 중',receipt:'영수증 확인 중',order:'주문 등록 중',cancel:'주문 취소 중',claim:'보상 수령 중',friends:'친구 목록 확인 중',friendSearch:'친구 검색 중',friendProfile:'친구 정보 확인 중',friendRequest:'친구 요청 보내는 중',friendRespond:'친구 요청 처리 중',friendRemove:'친구 목록 변경 중',friendSettings:'공개 설정 저장 중',backup:'백업 준비 중',restore:'백업 확인 중',save:'진행 저장 중',reset:'진행 초기화 중',quote:'거래 가격 확인 중',report:'문의 보내는 중',pin:'비밀번호 변경 중',priceAlert:'목표가 알림 설정 중'};return action==='trade'?(data.side==='sell'?'주식 매도 중':data.side==='buy'?'주식 매수 중':'거래 처리 중'):names[action]||'요청 처리 중';}
+function updateProcessingLabel(){const label=$('#request-loading-text');if(label)label.textContent=requestLabels.at(-1)?.label||'요청 처리 중';}
 async function request(action,data={}){
  const visible=!['sync','explore','login','signup','settings','readNews','tutorial'].includes(action),session=api.token+'|'+api.proxyToken;
+ const job={label:processingLabel(action,data)};if(visible){requestLabels.push(job);updateProcessingLabel();}
  if(visible&&foregroundRequests++===0)loadingTimer=setTimeout(()=>{const overlay=$('#request-loading');overlay.hidden=false;if(overlay.showPopover)overlay.showPopover();else (modal.open?modal:document.body).append(overlay);},1000);
- try{const result=await api.send(action,data);if(!['login','signup'].includes(action)&&session!==api.token+'|'+api.proxyToken)throw Object.assign(new Error('계정이 변경되어 이전 응답을 적용하지 않았어요.'),{definitive:true});return result;}catch(error){if(!['login','signup'].includes(action)&&session!==api.token+'|'+api.proxyToken)throw Object.assign(new Error('계정이 변경되어 이전 응답을 적용하지 않았어요.'),{definitive:true});throw error;}finally{if(visible&&--foregroundRequests===0){clearTimeout(loadingTimer);const overlay=$('#request-loading');if(overlay.hidePopover)overlay.hidePopover();overlay.hidden=true;if(!overlay.showPopover)document.body.append(overlay);}}
+ try{const result=await api.send(action,data);if(!['login','signup'].includes(action)&&session!==api.token+'|'+api.proxyToken)throw Object.assign(new Error('계정이 변경되어 이전 응답을 적용하지 않았어요.'),{definitive:true});return result;}catch(error){if(!['login','signup'].includes(action)&&session!==api.token+'|'+api.proxyToken)throw Object.assign(new Error('계정이 변경되어 이전 응답을 적용하지 않았어요.'),{definitive:true});throw error;}finally{if(visible){requestLabels.splice(requestLabels.indexOf(job),1);updateProcessingLabel();}if(visible&&--foregroundRequests===0){clearTimeout(loadingTimer);const overlay=$('#request-loading');if(overlay.hidePopover)overlay.hidePopover();overlay.hidden=true;if(!overlay.showPopover)document.body.append(overlay);}}
 }
 let bootTimer, bootRefresh;
 function startLoading(stage){
@@ -52,15 +63,17 @@ function finishLoading(){clearInterval(bootTimer);clearTimeout(bootRefresh);}
 function installAfterLogin(){const content=installSuggestion();if(content)showModal('앱으로 더 편하게',content);}
 function updateSearch(){const template=document.createElement('template');template.innerHTML=view.market(snapshot,filter);$('#market-results')?.replaceChildren(...template.content.querySelector('#market-results').childNodes);}
 
-function reduced(){return !snapshot?.account.settings.animation||matchMedia('(prefers-reduced-motion: reduce)').matches;}
+function reduced(){return matchMedia('(prefers-reduced-motion: reduce)').matches;}
 function apply(s,fromServer=true){
  if(!s)return;if(confirmedSnapshot&&s.revision<confirmedSnapshot.revision)return;confirmedSnapshot=s;s=optimistic.project(s);
+ Object.assign(s.account.settings,browserPreferences.read(s.account.id,s.account.settings));
  if(friendsUI.owner!==s.account.id+'|'+api.token+'|'+api.proxyToken){friendsUI.owner=s.account.id+'|'+api.token+'|'+api.proxyToken;friendsUI.data=null;friendsUI.results=[];records=[];recordOffset=0;}
  const previous=snapshot;totalChanged=!!previous&&previous.total!==s.total;changedOrders=new Set(previous?s.orders.filter(o=>o.status==='체결'&&previous.orders.some(p=>p.id===o.id&&p.status==='대기')).map(o=>o.id):[]);snapshot=s;document.body.classList.remove('is-auth');document.body.classList.toggle('is-proxy',!!s.proxy);if(fromServer)receivedAt=Date.now();document.body.classList.toggle('no-motion',!s.account.settings.animation);sound.settings(s.account.settings);
  if(!previous){try{const saved=JSON.parse(sessionStorage.getItem(pendingKey)||'null');if(saved&&saved.accountId===s.account.id)pending={action:saved.action,data:saved.data};}catch{}}
  $('#ticker').hidden=false;$('#nav').hidden=false;$('#proxy-banner').hidden=!s.proxy;$('#proxy-banner').textContent=s.proxy?'플레이어 시점: '+s.proxy.name:'';
  $('#ticker').innerHTML=`<button data-action="amount" data-value="${s.account.cash}"><strong id="cash">${compact(s.account.cash)}</strong></button><div class="day"><strong>DAY ${s.day}</strong></div><div class="time"><small>다음 시세 확인</small><strong id="countdown">${countdownSeconds()}초</strong></div>`;
  if(previous&&previous.account.id!==s.account.id)lastCash=null;
+ animateMoney($('#cash'),lastCash??s.account.cash,s.account.cash,document.hidden||reduced());
  if(lastCash!==null&&lastCash!==s.account.cash&&!document.hidden&&!reduced()){$('#cash').classList.add('changed');toast((s.account.cash-lastCash>0?'+':'')+money(s.account.cash-lastCash)+' · 현금 변동');}lastCash=s.account.cash;
  if(previous&&previous.account.runId===s.account.runId){const old=Object.keys(previous.account.achievements),fresh=Object.keys(s.account.achievements).filter(id=>!old.includes(id));if(fresh.length)celebrate(s.account.achievements[fresh[0]],fresh.length);if(s.day>previous.day&&s.day<=4)toast('DAY '+s.day+' · 새로운 기능이 열렸습니다.');}
  if(changedOrders.size)toast('✓ 예약 주문 '+changedOrders.size+'건 체결 완료');
@@ -86,12 +99,12 @@ function nav(){const tabs=[['home','홈'],['news','뉴스'],['market','거래소
 function render(){
  if(!snapshot)return renderLogin(serverStatus);if(page==='newsDetail'&&!article)page='news';if(page==='detail'&&!snapshot.stocks.some(x=>x.id===symbol))page='market';nav();const s=snapshot;
  const content={newsDetail:()=>view.newsArticle(s,article),friends:()=>friendsUI.view(),home:()=>view.home(s,period),market:()=>view.market(s,filter),news:()=>view.news(s),assets:()=>view.assets(s),settings:()=>view.settings(s),total:()=>view.total(s),orders:()=>view.orders(s),inbox:()=>view.inbox(s),achievements:()=>view.achievements(s),detail:()=>view.detail(s,s.stocks.find(x=>x.id===symbol)),economy:()=>economy(),records:()=>recordsView()};
- if(page==='admin'){admin.render();return;}main.classList.toggle('market-updated',lastChartTime!==s.marketTime);lastChartTime=s.marketTime;const expanded=[...main.querySelectorAll('details[data-achievement][open]')].map(el=>el.dataset.achievement);main.innerHTML=(content[page]||content.home)();main.querySelectorAll('details[data-achievement]').forEach(el=>el.open=expanded.includes(el.dataset.achievement));if(page==='total'&&totalChanged)$('#total-number')?.classList.add('changed');main.querySelectorAll('[data-order]').forEach(el=>{if(changedOrders.has(el.dataset.order))el.classList.add('changed');});changedOrders.clear();if(s.account.settings.terms)main.querySelectorAll('.receipt span.muted').forEach(el=>{const term=Object.keys(terms).sort((a,b)=>b.length-a.length).find(t=>el.textContent.includes(t));if(term){const b=document.createElement('button');b.type='button';b.className='link-button';b.dataset.action='help';b.dataset.term=term;b.textContent=el.textContent+' ⓘ';el.replaceWith(b);}});
+ if(page==='admin'){admin.render();return;}main.classList.toggle('market-updated',lastChartTime!==s.marketTime);lastChartTime=s.marketTime;const expanded=[...main.querySelectorAll('details[data-achievement][open]')].map(el=>el.dataset.achievement);const oldPrices=new Map([...main.querySelectorAll('[data-price]')].map(el=>[el.dataset.price,Number(el.dataset.amount)]));main.innerHTML=(content[page]||content.home)();main.querySelectorAll('[data-price]').forEach(el=>animateMoney(el,oldPrices.get(el.dataset.price),Number(el.dataset.amount),reduced()));main.querySelectorAll('details[data-achievement]').forEach(el=>el.open=expanded.includes(el.dataset.achievement));if(page==='total'&&totalChanged)$('#total-number')?.classList.add('changed');main.querySelectorAll('[data-order]').forEach(el=>{if(changedOrders.has(el.dataset.order))el.classList.add('changed');});changedOrders.clear();if(s.account.settings.terms)main.querySelectorAll('.receipt span.muted').forEach(el=>{const term=Object.keys(terms).sort((a,b)=>b.length-a.length).find(t=>el.textContent.includes(t));if(term){const b=document.createElement('button');b.type='button';b.className='link-button';b.dataset.action='help';b.dataset.term=term;b.textContent=el.textContent+' ⓘ';el.replaceWith(b);}});
 }
 function renderLogin(message=''){finishLoading();document.body.classList.add('is-auth');cancelAnimationFrame(animationFrame);$('#ticker').hidden=true;$('#nav').hidden=true;$('#proxy-banner').hidden=true;main.innerHTML=view.loginView(authMode,message);}
-function refreshMarketPrices(){document.querySelectorAll('.stock[data-symbol]').forEach(el=>{const x=snapshot.stocks.find(v=>v.id===el.dataset.symbol);if(!x)return;const price=el.querySelector('.stock-price strong'),delta=el.querySelector('.stock-price p'),value=(x.price/x.base-1)*100;price.textContent=money(x.price);delta.textContent=percent(value);delta.className=value>=0?'up':'down';});}
+function refreshMarketPrices(){document.querySelectorAll('.stock[data-symbol]').forEach(el=>{const x=snapshot.stocks.find(v=>v.id===el.dataset.symbol);if(!x)return;const price=el.querySelector('.stock-price strong'),delta=el.querySelector('.stock-price p'),value=(x.price/x.base-1)*100;animateMoney(price,Number(price.dataset.amount)||x.price,x.price,reduced());delta.textContent=percent(value);delta.className=value>=0?'up':'down';});}
 async function navigate(next,id){
- if(!snapshot)return;page=next;if(id)symbol=id;location.hash=next+(next==='detail'?'/'+symbol:'');modal.close();render();main.classList.remove('page-in');void main.offsetWidth;main.classList.add('page-in');window.scrollTo({top:0,behavior:'instant'});
+ if(!snapshot)return;const order=['home','news','market','assets','settings'],direction=order.indexOf(next)>=order.indexOf(page)?1:-1;main.style.setProperty('--page-direction',direction);page=next;if(id)symbol=id;location.hash=next+(next==='detail'?'/'+symbol:'');modal.close();render();main.classList.remove('page-in');void main.offsetWidth;main.classList.add('page-in');window.scrollTo({top:0,behavior:'instant'});
  if(next==='total'){animateTotal();void sync(false).then(()=>{if(page==='total'&&snapshot){render();animateTotal();}});}
  if(next==='friends')await friendsUI.load();
  if(next==='records'){records=[];recordOffset=0;render();await loadRecords();}
@@ -185,7 +198,7 @@ document.addEventListener('click',async event=>{
   if(action==='cancel'){showModal('예약을 취소할까요?',`<p>대기 주문을 취소하고 잠긴 현금 또는 수량을 해제합니다.</p>${view.button('취소 확정','confirmCancel',`data-id="${target.dataset.id}"`,'wide primary')}`);return;}
   if(action==='confirmCancel'){await mutate('cancel',{orderId:target.dataset.id});modal.close();return toast('예약 주문을 취소했습니다.');}
   if(action==='readNews'){readNews(target.dataset.id);return;}
-  if(action==='claim'){const r=await mutate('claim',{claimId:target.dataset.id});if(r.claimed.length){sound.effect();if(!reduced()){const coin=document.createElement('span');coin.className='coins';coin.textContent='● · ●';document.body.append(coin);setTimeout(()=>coin.remove(),700);}toast(r.claimed.length+'건을 수령했습니다.');}else toast('지급 시각·해금·종목 상태를 확인해 주세요.');return;}
+  if(action==='claim'){const source=target.getBoundingClientRect(),before=snapshot.account.cash,r=await mutate('claim',{claimId:target.dataset.id});if(r.claimed.length){sound.effect();rewardFlight(source,$('#cash'),snapshot.account.cash-before,reduced());toast(r.claimed.length+'건을 수령했습니다.');}else toast('지급 시각·해금·종목 상태를 확인해 주세요.');return;}
   if(action==='receipt'){const r=await request('receipt',{id:target.dataset.id});return showModal('거래 영수증',view.receipt(r.receipt));}
   if(action==='moreRecords')return await loadRecords();
   if(action==='sync'||action==='retrySync'){modal.close();if(!api.token){await boot();return;}return await sync();}
@@ -201,9 +214,9 @@ document.addEventListener('click',async event=>{
   if(action==='restore'){const input=document.createElement('input');input.type='file';input.accept='.json,application/json';input.onchange=async()=>{try{const file=input.files[0];if(!file)return;if(file.size>500000)throw new Error('백업 파일이 너무 큽니다.');await mutate('restore',{backup:JSON.parse(await file.text())});toast('서버 최신 기록과 백업을 검증했습니다.');}catch(error){failure(error);}};input.click();return;}
  }catch(error){failure(error);}
 });
-document.addEventListener('input',event=>{lastInput=Date.now();if(event.target.closest('#trade-form'))estimate();if(event.target.closest('#settings-form')&&event.target.type==='range')sound.settings({...snapshot.account.settings,[event.target.name]:Number(event.target.value)});if(event.target.id==='search'){filter.search=event.target.value;if(!event.isComposing)updateSearch();}});
+document.addEventListener('input',event=>{lastInput=Date.now();if(event.target.closest('#trade-form'))estimate();if(event.target.closest('#settings-form')&&event.target.type==='range')savePreferences({[event.target.name]:Number(event.target.value)});if(event.target.id==='search'){filter.search=event.target.value;if(!event.isComposing)updateSearch();}});
 document.addEventListener('compositionend',event=>{if(event.target.id==='search'){filter.search=event.target.value;updateSearch();}});
-document.addEventListener('change',event=>{if(event.target.closest('#settings-form')){const input=event.target;savePreferences({[input.name]:input.type==='checkbox'?input.checked:Number(input.value)});}if(event.target.id==='sort'){filter.sort=event.target.value;render();}if(event.target.id==='favorites'){filter.favorites=event.target.checked;render();}});
+document.addEventListener('change',event=>{if(event.target.closest('#settings-form')&&event.target.type!=='range'){const input=event.target;savePreferences({[input.name]:input.type==='checkbox'?input.checked:Number(input.value)});}if(event.target.id==='sort'){filter.sort=event.target.value;render();}if(event.target.id==='favorites'){filter.favorites=event.target.checked;render();}});
 document.addEventListener('submit',async event=>{
  event.preventDefault();const form=event.target,fd=new FormData(form),data=Object.fromEntries(fd);const submit=form.querySelector('button[type=submit],button:not([type])');if(submit)submit.disabled=true;
  try{
@@ -228,7 +241,7 @@ document.addEventListener('submit',async event=>{
   if(form.id==='confirm-trade-form'){const r=await mutate('trade',form._quote);sound.effect();return showModal('거래 영수증',view.receipt(r.receipt));}
   if(form.id==='confirm-order-form'){await mutate('order',form._order);modal.close();await navigate('orders');return toast('예약 주문을 등록했습니다.');}
   if(form.id==='price-alert-form'){await mutate('priceAlert',{symbol:form.dataset.symbol,price:Number(data.price),direction:data.direction});modal.close();return toast('목표가를 등록했습니다.');}
-  if(form.id==='settings-form'){savePreferences({bgm:Number(data.bgm),sfx:Number(data.sfx),terms:fd.has('terms'),animation:fd.has('animation')});return toast('설정을 반영했어요.');}
+  if(form.id==='settings-form'){savePreferences({bgm:Number(data.bgm),sfx:Number(data.sfx),terms:fd.has('terms')});return toast('설정을 반영했어요.');}
   if(form.id==='notifications-form'){modal.close();savePreferences({notifications:{risk:fd.has('risk'),orders:fd.has('orders'),targets:fd.has('targets'),start:Number(data.start),end:Number(data.end),limit:Number(data.limit)}});return toast('알림 설정을 반영했어요.');}
   if(form.id==='pin-form'){await mutate('pin',data);api.clear();snapshot=null;confirmedSnapshot=null;modal.close();renderLogin('PIN이 변경되었습니다. 다시 로그인해 주세요.');return;}
   if(form.id==='reset-form'){await mutate('reset',{pin:data.pin});page='home';modal.close();render();return tutorial();}
