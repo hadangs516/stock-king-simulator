@@ -37,7 +37,17 @@ King.settle = function(s,a,x,side,q,price,t,env,orderId,memo,admin) {
   if(!admin&&x.market!=='ETF')s.market.flows.push({at:t,accountId:a.id,symbol:x.id,amount:(side==='buy'?1:-1)*c.gross});
   return receipt;
 };
-King.trade = function(s,a,r,t,env,admin) {var q=s.quotes[r.quoteId];if(!q||q.accountId!==a.id||q.runId!==a.runId||q.expires<=t||q.minute!==s.market.minute)King.fail('시세가 변경되거나 만료되었습니다. 다시 확인해 주세요.');var x=King.instrument(s,a,q.symbol,t);if(x.price!==q.price)King.fail('시세가 변경되었습니다.');var receipt=King.settle(s,a,x,q.side,q.quantity,q.price,t,env,null,King.text(r.memo||'',200),admin);delete s.quotes[q.id];return {receipt};};
+King.offerSignature = function(a,x,o,env) {return env.sign(JSON.stringify(['trade-offer-v1',a.id,a.runId,x.id,x.float,x.tradeEpoch||0,o.price,o.issued,o.expires]));};
+King.priceOffer = function(a,x,t,env) {var o={price:x.price,issued:t,expires:t+20000};o.signature=King.offerSignature(a,x,o,env);return o;};
+King.trade = function(s,a,r,t,env,admin) {
+ if(r.offer){
+  var x=King.instrument(s,a,r.symbol,t),o=r.offer;
+  if(!Number.isSafeInteger(o.price)||o.price<1||!Number.isSafeInteger(o.issued)||o.issued>t||o.expires!==o.issued+20000||t>=o.expires||o.signature!==King.offerSignature(a,x,o,env))King.fail('시세 확인 시간이 지났거나 유효하지 않습니다. 최신 시세를 확인해 주세요.');
+  if(['buy','sell'].indexOf(r.side)<0)King.fail('거래 방향을 확인해 주세요.');
+  return {receipt:King.settle(s,a,x,r.side,King.int(r.quantity,1,100000000),o.price,t,env,null,King.text(r.memo||'',200),admin)};
+ }
+ var q=s.quotes[r.quoteId];if(!q||q.accountId!==a.id||q.runId!==a.runId||q.expires<=t||q.minute!==s.market.minute)King.fail('시세가 변경되거나 만료되었습니다. 다시 확인해 주세요.');var x=King.instrument(s,a,q.symbol,t);if(x.price!==q.price)King.fail('시세가 변경되었습니다.');var receipt=King.settle(s,a,x,q.side,q.quantity,q.price,t,env,null,King.text(r.memo||'',200),admin);delete s.quotes[q.id];return {receipt};
+};
 King.order = function(s,a,r,t,env,admin) {
   var x=King.instrument(s,a,r.symbol,t),q=King.int(r.quantity,1,100000000),price=King.int(r.price,1,1000000000);
   if(['limitBuy','limitSell','stop','oco'].indexOf(r.kind)<0)King.fail('예약 종류를 확인해 주세요.');

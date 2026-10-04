@@ -18,3 +18,21 @@ body{color:#17243a;word-break:keep-all;overflow-wrap:break-word}button{color:#26
 #request-loading{margin:0;width:100vw;height:100dvh;border:0;padding:0;max-width:none;max-height:none}#request-loading::backdrop{background:none}
 
 .friend-card{padding:16px;margin-top:10px;border:1px solid #dce8fa;border-radius:12px;background:#f3f7ff}.friend-card>.row{margin-top:10px;flex-wrap:wrap}.friend-stat{display:flex;justify-content:space-between;padding:15px;background:#f2f6fc;border-radius:10px;margin:8px 0}#friend-search{min-width:0}#friend-search-form button{flex-shrink:0}.card>summary{cursor:pointer;font-weight:600}
+
+.back{border:1px solid #d5dfec;border-radius:9px;padding:7px 13px;margin-bottom:14px;background:#fff;min-height:38px}.candle-chart text{fill:#78869d;font-size:9px}.candle-chart g:focus{outline:none}.candle-chart g:focus rect{stroke:#182943;stroke-width:2}
+
+.news-date{margin:24px 0}.news-date>h3{font-size:13px;color:#73819a;margin-bottom:10px}.news-preview{display:block;width:100%;text-align:left;border:1px solid #dce6f4;border-radius:13px;padding:17px;margin-bottom:10px;background:#f8faff}.news-preview strong{display:block;font-size:16px;line-height:1.6;margin-top:12px;color:#1f3049}.news-preview time,.news-article time{font-size:12px;color:#728097;font-weight:400}.news-article h2{margin:18px 0 10px;line-height:1.5}.news-article>p{font-size:15px;line-height:1.95;margin-top:18px}.news-article .article-label{font-size:11px;color:#8b97aa;margin-top:0}
+.company-logo{position:relative;display:inline-grid;place-items:center;flex-shrink:0;overflow:hidden;background:#f1f5f9}
+.company-logo img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#fff}
+.company-heading{display:flex;align-items:center;gap:12px}.company-heading .company-logo{width:48px;height:48px;font-size:14px}
+.achievement-group{margin:16px 0;border:1px solid #dce5ef;border-radius:16px;overflow:hidden;background:#fff}
+.achievement-group summary{display:flex;gap:14px;align-items:center;padding:20px;cursor:pointer;background:#edf4ff;list-style:none}
+.achievement-group summary::-webkit-details-marker{display:none}
+.achievement-group.tone-1 summary{background:#ecf8f2}.achievement-group.tone-2 summary{background:#fff5df}.achievement-group.tone-3 summary{background:#f2edff}
+.achievement-icon{font-size:30px;color:#2865c7}.achievement-summary{display:grid;gap:7px;flex:1}.achievement-summary small{color:#596579}.achievement-chevron{color:#526681;transition:transform .2s}
+.achievement-group[open] .achievement-chevron{transform:rotate(180deg)}.achievement-progress{padding:0 20px 16px;background:inherit}.achievement-progress .bar{margin-top:12px}
+.achievement-group ol{margin:0;padding:0 20px;list-style:none}.achievement-stage{padding:18px 0;border-top:1px solid #e5eaf0}.achievement-stage p,.achievement-stage small{margin-top:8px;display:block}
+.badge-celebration{position:fixed;left:50%;top:115px;transform:translateX(-50%);z-index:90;display:flex;gap:15px;align-items:center;width:min(90vw,370px);padding:20px;background:#fff8e7;border:2px solid #edbf54;box-shadow:0 12px 40px #573e1733;border-radius:18px;pointer-events:none;animation:badge-arrive .45s ease-out}
+.badge-medal{display:grid;place-items:center;background:#ffc744;color:#7b4e00;width:48px;height:48px;border-radius:50%;font-size:28px;flex-shrink:0}.badge-celebration strong{display:block;margin-top:5px}
+@keyframes badge-arrive{from{opacity:0;transform:translate(-50%,-20px) scale(.95)}to{opacity:1;transform:translate(-50%,0) scale(1)}}
+@media(prefers-reduced-motion:reduce){.badge-celebration{animation:none}}.no-motion .badge-celebration{animation:none}

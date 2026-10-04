@@ -16,7 +16,7 @@ King.login = function(s,r,env) {
   a.lastLogin=t;a.lastSeen=t;a.logins++;if(!env.isAdmin(a.name))King.log(s,a,'로그인',{},t,env);
   var token=env.id()+env.id()+env.id();s.sessions[env.hash(token)]={accountId:a.id,expires:t+(r.remember?30*King.DAY:12*3600000)};
   King.advance(s,t,env);if(King.achievements)King.achievements(s,a,t,env);s.revision++;
-  var snapshot=King.snapshot(s,a,t);snapshot.admin=env.isAdmin(a.name);
+  var snapshot=King.snapshot(s,a,t,null,env);snapshot.admin=env.isAdmin(a.name);
   var response={token,snapshot};
   if(isAdmin){var proof=King.admin(s,a,{actor:a},{action:'adminUnlock',token,secret:r.adminSecret},env);response.adminToken=proof.adminToken;response.adminExpires=proof.expires;}
   return {state:s,response};

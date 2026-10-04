@@ -1,12 +1,14 @@
 import {api} from './api.js';
 import {VERSION} from './config.js';
-import {escape as e,money,compact,stamp,percent,icon} from './format.js';
+import {escape as e,money,compact,stamp,percent,icon,maxBuyQuantity} from './format.js';
 import * as view from './views.js';
+import {OptimisticActions} from './optimistic.js';
 import {FriendsUI} from './friends-ui.js';
 import {AdminUI} from './admin-ui.js';
 import {sound,installApp,prepareInstall,installSuggestion,dismissInstall} from './platform.js';
 const $=selector=>document.querySelector(selector), main=$('#main'), modal=$('#modal');
-let snapshot=null,page='home',symbol=null,period='all',authMode='login',busy=false,syncing=null,pending=null,recordOffset=0,records=[];
+let confirmedSnapshot=null,snapshot=null,page='home',symbol=null,period='all',authMode='login',busy=false,syncing=null,pending=null,recordOffset=0,records=[];
+let article=null,newsReturn='news';
 let changedOrders=new Set(),totalChanged=false,lastChartTime=0;
 let lastInput=Date.now(),receivedAt=0,toastAt=0,toastTimer,serverStatus='',lastCash=null,animationFrame;
 const pendingKey='king-pending-operation';
@@ -15,21 +17,32 @@ const filter={market:'KOSPI',search:'',sort:'name',favorites:false};
 if(VERSION.endsWith('-local')){const note=document.createElement('p');note.className='footnote';note.textContent='로컬 테스트 · 서버 종료 시 테스트 데이터 삭제';$('#header').append(note);}
 const admin=new AdminUI({call:mutate,read:request,modal:showModal,close:()=>modal.close(),toast,navigate,apply,getSnapshot:()=>snapshot,api});
 const friendsUI=new FriendsUI({context:()=>api.token+'|'+api.proxyToken,call:mutate,read:request,modal:showModal,close:()=>modal.close(),toast,render:()=>{if(page==='friends')render();}});
+const optimistic=new OptimisticActions({context:()=>api.token+'|'+api.proxyToken+'|'+confirmedSnapshot?.account.runId,send:request,changed:()=>{if(confirmedSnapshot){apply(confirmedSnapshot,false);renderAfterPreference();}},confirmed:s=>{apply(s);renderAfterPreference();},failed:error=>{toast(error.message+' 설정을 다시 확인합니다.');void sync();}});
+function renderAfterPreference(){document.querySelectorAll('#settings-form input').forEach(input=>{if(!snapshot)return;const value=snapshot.account.settings[input.name];if(input.type==='checkbox')input.checked=!!value;else if(!input.matches(':active'))input.value=value;});if(!modal.open&&!['INPUT','TEXTAREA','SELECT'].includes(document.activeElement?.tagName))render();}
+function localAction(action,data,patch){optimistic.enqueue(action,{...data,runId:snapshot.account.runId,requestId:crypto.randomUUID()},patch);}
+function savePreferences(settings){localAction('settings',{settings},s=>Object.assign(s.account.settings,settings));}
 function toast(text){clearTimeout(toastTimer);$('#toast').textContent=text;$('#toast').hidden=false;toastAt=Date.now();toastTimer=setTimeout(()=>$('#toast').hidden=true,4000);}
+function celebrate(achievement,count){
+ sound.effect('achievement');document.querySelector('.badge-celebration')?.remove();
+ const card=document.createElement('aside');card.className='badge-celebration';card.setAttribute('role','status');
+ card.innerHTML=`<span class="badge-medal" aria-hidden="true">★</span><div><small>배지 획득${count>1?' · '+count+'개':''}</small><strong>${e(view.achievementName(achievement))}</strong></div>`;
+ document.body.append(card);setTimeout(()=>card.remove(),4200);
+}
+document.addEventListener('error',event=>{if(event.target.matches?.('.company-logo img'))event.target.remove();},true);
 $('#toast').onclick=()=>{if(Date.now()-toastAt>=1000)$('#toast').hidden=true;};
-function showModal(title,content){modal.classList.toggle('trade-receipt',title.includes('영수증'));$('#modal-title').textContent=title;$('#modal-content').innerHTML=content;if(!modal.open)modal.showModal();}
+function showModal(title,content){const receipt=title.includes('영수증');modal.classList.toggle('trade-receipt',receipt);$('#modal-close').hidden=receipt;$('#modal-title').textContent=title;$('#modal-content').innerHTML=content+(receipt?view.button('확인','close','','primary wide'):'');if(!modal.open)modal.showModal();}
 $('#modal-close').onclick=()=>modal.close();modal.addEventListener('click',event=>{if(event.target===modal){const box=modal.getBoundingClientRect();if(event.clientX<box.left||event.clientX>box.right||event.clientY<box.top||event.clientY>box.bottom)modal.close();}});
 function failure(error){showModal('확인이 필요해요',`<p class="error">${e(error.message)}</p>${pending?view.button('같은 요청으로 재시도','retry','','wide primary'):view.button('최신 상태 확인','sync','','wide')}`);}
 function connection(message){$('#connection').hidden=!message;$('#connection').innerHTML=message?`${e(message)}${view.button('재시도','retrySync')}`:'';}
 let foregroundRequests=0, loadingTimer;
 async function request(action,data={}){
- const visible=action!=='sync'&&action!=='explore',session=api.token+'|'+api.proxyToken;
+ const visible=!['sync','explore','login','signup','settings','readNews','tutorial'].includes(action),session=api.token+'|'+api.proxyToken;
  if(visible&&foregroundRequests++===0)loadingTimer=setTimeout(()=>{const overlay=$('#request-loading');overlay.hidden=false;if(overlay.showPopover)overlay.showPopover();else (modal.open?modal:document.body).append(overlay);},1000);
  try{const result=await api.send(action,data);if(!['login','signup'].includes(action)&&session!==api.token+'|'+api.proxyToken)throw Object.assign(new Error('계정이 변경되어 이전 응답을 적용하지 않았어요.'),{definitive:true});return result;}catch(error){if(!['login','signup'].includes(action)&&session!==api.token+'|'+api.proxyToken)throw Object.assign(new Error('계정이 변경되어 이전 응답을 적용하지 않았어요.'),{definitive:true});throw error;}finally{if(visible&&--foregroundRequests===0){clearTimeout(loadingTimer);const overlay=$('#request-loading');if(overlay.hidePopover)overlay.hidePopover();overlay.hidden=true;if(!overlay.showPopover)document.body.append(overlay);}}
 }
 let bootTimer, bootRefresh;
 function startLoading(stage){
- document.body.classList.add('is-auth');
+ document.body.classList.add('is-auth');connection('');
  main.innerHTML=`<section class="boot"><h1>주식왕 시뮬레이션</h1><div class="boot-symbol" aria-hidden="true">↗</div><div class="progress"><span></span></div><p id="loading-stage" role="status">${e(stage)}</p><button id="boot-refresh" data-action="reload" hidden>새로고침</button><small class="boot-version">v${VERSION}</small></section>`;
  let progress=10;clearInterval(bootTimer);clearTimeout(bootRefresh);
  bootTimer=setInterval(()=>{progress+=Math.max(.2,(92-progress)*.09);const bar=main.querySelector('.progress>span');if(bar)bar.style.width=progress+'%';},300);
@@ -40,17 +53,18 @@ function installAfterLogin(){const content=installSuggestion();if(content)showMo
 function updateSearch(){const template=document.createElement('template');template.innerHTML=view.market(snapshot,filter);$('#market-results')?.replaceChildren(...template.content.querySelector('#market-results').childNodes);}
 
 function reduced(){return !snapshot?.account.settings.animation||matchMedia('(prefers-reduced-motion: reduce)').matches;}
-function apply(s){
- if(!s)return;if(snapshot&&s.revision<snapshot.revision)return;
+function apply(s,fromServer=true){
+ if(!s)return;if(confirmedSnapshot&&s.revision<confirmedSnapshot.revision)return;confirmedSnapshot=s;s=optimistic.project(s);
  if(friendsUI.owner!==s.account.id+'|'+api.token+'|'+api.proxyToken){friendsUI.owner=s.account.id+'|'+api.token+'|'+api.proxyToken;friendsUI.data=null;friendsUI.results=[];records=[];recordOffset=0;}
- const previous=snapshot;totalChanged=!!previous&&previous.total!==s.total;changedOrders=new Set(previous?s.orders.filter(o=>o.status==='체결'&&previous.orders.some(p=>p.id===o.id&&p.status==='대기')).map(o=>o.id):[]);snapshot=s;document.body.classList.remove('is-auth');document.body.classList.toggle('is-proxy',!!s.proxy);receivedAt=Date.now();document.body.classList.toggle('no-motion',!s.account.settings.animation);sound.settings(s.account.settings);
+ const previous=snapshot;totalChanged=!!previous&&previous.total!==s.total;changedOrders=new Set(previous?s.orders.filter(o=>o.status==='체결'&&previous.orders.some(p=>p.id===o.id&&p.status==='대기')).map(o=>o.id):[]);snapshot=s;document.body.classList.remove('is-auth');document.body.classList.toggle('is-proxy',!!s.proxy);if(fromServer)receivedAt=Date.now();document.body.classList.toggle('no-motion',!s.account.settings.animation);sound.settings(s.account.settings);
  if(!previous){try{const saved=JSON.parse(sessionStorage.getItem(pendingKey)||'null');if(saved&&saved.accountId===s.account.id)pending={action:saved.action,data:saved.data};}catch{}}
  $('#ticker').hidden=false;$('#nav').hidden=false;$('#proxy-banner').hidden=!s.proxy;$('#proxy-banner').textContent=s.proxy?'플레이어 시점: '+s.proxy.name:'';
- $('#ticker').innerHTML=`<button data-action="amount" data-value="${s.account.cash}"><strong id="cash">${compact(s.account.cash)}</strong></button><div class="day"><strong>DAY ${s.day}</strong></div><div class="time"><small>다음 시세 확인</small><strong id="countdown">곧 갱신</strong></div>`;
+ $('#ticker').innerHTML=`<button data-action="amount" data-value="${s.account.cash}"><strong id="cash">${compact(s.account.cash)}</strong></button><div class="day"><strong>DAY ${s.day}</strong></div><div class="time"><small>다음 시세 확인</small><strong id="countdown">${countdownSeconds()}초</strong></div>`;
  if(previous&&previous.account.id!==s.account.id)lastCash=null;
  if(lastCash!==null&&lastCash!==s.account.cash&&!document.hidden&&!reduced()){$('#cash').classList.add('changed');toast((s.account.cash-lastCash>0?'+':'')+money(s.account.cash-lastCash)+' · 현금 변동');}lastCash=s.account.cash;
- if(previous&&previous.account.runId===s.account.runId){const old=Object.keys(previous.account.achievements),fresh=Object.keys(s.account.achievements).filter(id=>!old.includes(id));if(fresh.length)toast('새 업적 달성 · '+view.achievementName(s.account.achievements[fresh[0]]));if(s.day>previous.day&&s.day<=4)toast('DAY '+s.day+' · 새로운 기능이 열렸습니다.');}
+ if(previous&&previous.account.runId===s.account.runId){const old=Object.keys(previous.account.achievements),fresh=Object.keys(s.account.achievements).filter(id=>!old.includes(id));if(fresh.length)celebrate(s.account.achievements[fresh[0]],fresh.length);if(s.day>previous.day&&s.day<=4)toast('DAY '+s.day+' · 새로운 기능이 열렸습니다.');}
  if(changedOrders.size)toast('✓ 예약 주문 '+changedOrders.size+'건 체결 완료');
+ if($('#trade-form')&&!busy)updateTradeOffer();
  connection(s.catchingUp?'밀린 시장을 처리하고 있습니다. 거래는 동기화 후 가능합니다.':'');
  if(pending){$('#connection').hidden=false;$('#connection').innerHTML='이전 요청 결과를 확인해 주세요.'+view.button('같은 요청 재시도','retry');}
 }
@@ -66,13 +80,13 @@ async function mutate(action,data={}){
 async function sync(renderAfter=true){
  if(!api.token||document.hidden)return;if(syncing)return syncing;if(busy)return;
  syncing=(async()=>{try{const result=await request('sync',{active:document.hasFocus()&&Date.now()-lastInput<300000});apply(result.snapshot);if(renderAfter&&!modal.open&&document.activeElement?.tagName!=='INPUT'&&document.activeElement?.tagName!=='TEXTAREA'&&!['admin','market'].includes(page))render();if(page==='market')refreshMarketPrices();if(snapshot?.catchingUp)setTimeout(()=>sync(),1500);}
- catch(error){connection(error.message);if(/인증.*만료|로그인 인증/.test(error.message)){api.clear();snapshot=null;renderLogin(error.message);}}finally{syncing=null;}})();return syncing;
+ catch(error){connection(error.message);if(/인증.*만료|로그인 인증/.test(error.message)){api.clear();snapshot=null;confirmedSnapshot=null;renderLogin(error.message);}}finally{syncing=null;}})();return syncing;
 }
 function nav(){const tabs=[['home','홈'],['news','뉴스'],['market','거래소'],['assets','내 자산'],['settings','설정']];$('#nav').innerHTML=tabs.map(([id,name])=>`<button type="button" data-page="${id}" class="${page===id?'active':''}" ${page===id?'aria-current="page"':''}>${icon(id)}${name}</button>`).join('');}
 function render(){
- if(!snapshot)return renderLogin(serverStatus);if(page==='detail'&&!snapshot.stocks.some(x=>x.id===symbol))page='market';nav();const s=snapshot;
- const content={friends:()=>friendsUI.view(),home:()=>view.home(s,period),market:()=>view.market(s,filter),news:()=>view.news(s),assets:()=>view.assets(s),settings:()=>view.settings(s),total:()=>view.total(s),orders:()=>view.orders(s),inbox:()=>view.inbox(s),achievements:()=>view.achievements(s),detail:()=>view.detail(s,s.stocks.find(x=>x.id===symbol)),economy:()=>economy(),records:()=>recordsView()};
- if(page==='admin'){admin.render();return;}main.classList.toggle('market-updated',lastChartTime!==s.marketTime);lastChartTime=s.marketTime;main.innerHTML=(content[page]||content.home)();if(page==='total'&&totalChanged)$('#total-number')?.classList.add('changed');main.querySelectorAll('[data-order]').forEach(el=>{if(changedOrders.has(el.dataset.order))el.classList.add('changed');});changedOrders.clear();if(s.account.settings.terms)main.querySelectorAll('.receipt span.muted').forEach(el=>{const term=Object.keys(terms).find(t=>el.textContent.includes(t));if(term){const b=document.createElement('button');b.type='button';b.className='link-button';b.dataset.action='help';b.dataset.term=term;b.textContent=el.textContent+' ⓘ';el.replaceWith(b);}});
+ if(!snapshot)return renderLogin(serverStatus);if(page==='newsDetail'&&!article)page='news';if(page==='detail'&&!snapshot.stocks.some(x=>x.id===symbol))page='market';nav();const s=snapshot;
+ const content={newsDetail:()=>view.newsArticle(s,article),friends:()=>friendsUI.view(),home:()=>view.home(s,period),market:()=>view.market(s,filter),news:()=>view.news(s),assets:()=>view.assets(s),settings:()=>view.settings(s),total:()=>view.total(s),orders:()=>view.orders(s),inbox:()=>view.inbox(s),achievements:()=>view.achievements(s),detail:()=>view.detail(s,s.stocks.find(x=>x.id===symbol)),economy:()=>economy(),records:()=>recordsView()};
+ if(page==='admin'){admin.render();return;}main.classList.toggle('market-updated',lastChartTime!==s.marketTime);lastChartTime=s.marketTime;const expanded=[...main.querySelectorAll('details[data-achievement][open]')].map(el=>el.dataset.achievement);main.innerHTML=(content[page]||content.home)();main.querySelectorAll('details[data-achievement]').forEach(el=>el.open=expanded.includes(el.dataset.achievement));if(page==='total'&&totalChanged)$('#total-number')?.classList.add('changed');main.querySelectorAll('[data-order]').forEach(el=>{if(changedOrders.has(el.dataset.order))el.classList.add('changed');});changedOrders.clear();if(s.account.settings.terms)main.querySelectorAll('.receipt span.muted').forEach(el=>{const term=Object.keys(terms).sort((a,b)=>b.length-a.length).find(t=>el.textContent.includes(t));if(term){const b=document.createElement('button');b.type='button';b.className='link-button';b.dataset.action='help';b.dataset.term=term;b.textContent=el.textContent+' ⓘ';el.replaceWith(b);}});
 }
 function renderLogin(message=''){finishLoading();document.body.classList.add('is-auth');cancelAnimationFrame(animationFrame);$('#ticker').hidden=true;$('#nav').hidden=true;$('#proxy-banner').hidden=true;main.innerHTML=view.loginView(authMode,message);}
 function refreshMarketPrices(){document.querySelectorAll('.stock[data-symbol]').forEach(el=>{const x=snapshot.stocks.find(v=>v.id===el.dataset.symbol);if(!x)return;const price=el.querySelector('.stock-price strong'),delta=el.querySelector('.stock-price p'),value=(x.price/x.base-1)*100;price.textContent=money(x.price);delta.textContent=percent(value);delta.className=value>=0?'up':'down';});}
@@ -91,14 +105,47 @@ function recordsView(){return `${view.button('돌아가기','settings','','back'
 function tradingForm(id,side,reserve=false){
  const x=snapshot.stocks.find(v=>v.id===id);if(x.market==='ETF'&&snapshot.day<4)return showModal('ETF는 DAY 4에 열려요',view.lockedView(snapshot,4,'ETF','전체시장·반도체·소비재 ETF를 만나보세요.'));
  if(snapshot.catchingUp)throw new Error('시장 동기화 후 거래할 수 있습니다.');
- showModal(`${x.name} · ${reserve?'예약':side==='buy'?'매수':'매도'}`,`<p class="muted">현재가 ${money(x.price)} · 사용 가능 현금 ${money(snapshot.availableCash)}</p><p class="muted">매도 가능 ${snapshot.holdings[id]?.available||0}주</p><form id="trade-form" data-symbol="${id}" data-side="${side}" data-reserve="${reserve}">${reserve?'<label>예약 종류<select name="kind"><option value="limitBuy">지정가 매수</option><option value="limitSell">지정가 매도</option><option value="stop">손절 조건부 매도</option><option value="oco">익절·손절 묶음 매도</option></select></label>':''}<label>수량 (1주 단위)<input name="quantity" type="number" min="1" max="100000000" step="1" value="1" required></label>${reserve?`<label>지정가 / 조건가 (원)<input name="price" type="number" min="1" max="1000000000" step="1" value="${x.price}" required></label><label>묶음 주문의 손절가 (원)<input name="stop" type="number" min="1" max="1000000000" step="1" value="${Math.max(1,Math.floor(x.price*.9))}"></label><label>만료<select name="expiryDays"><option value="1">1일 후</option><option value="7" selected>7일 후</option><option value="0">직접 취소 전까지</option></select></label><p class="footnote">매수 현금·매도 수량을 확보합니다. 묶음 주문은 수량을 한 번 확보하며 한쪽 체결 시 반대쪽 취소. 정지 중 대기, 폐지·분할 시 취소됩니다.</p>`:'<label>투자 이유 (선택)<textarea name="memo" maxlength="200" placeholder="이 기업을 선택한 이유를 남겨 보세요."></textarea></label>'}<div id="trade-estimate" class="card"></div><p class="footnote">${taxHint()}</p><button type="submit" class="primary wide">${reserve?'예약 내용 확인':'최신 시세로 거래 확인'}</button></form>`);
- if(reserve&&side==='sell')$('#trade-form [name=kind]').value='limitSell';estimate();
+ showModal(`${x.name} · ${reserve?'예약':side==='buy'?'매수':'매도'}`,`<p class="muted">현재가 <span id="trade-current">${money(x.price)}</span> · 사용 가능 현금 ${money(snapshot.availableCash)}</p><p class="muted">매도 가능 ${snapshot.holdings[id]?.available||0}주</p><form id="trade-form" data-symbol="${id}" data-side="${side}" data-reserve="${reserve}">${reserve?'<label>예약 종류<select name="kind"><option value="limitBuy">지정가 매수</option><option value="limitSell">지정가 매도</option><option value="stop">손절 조건부 매도</option><option value="oco">익절·손절 묶음 매도</option></select></label>':''}<label>수량 (1주 단위)<input name="quantity" type="number" min="1" max="100000000" step="1" value="1" required></label>${reserve?`<label>지정가 / 조건가 (원)<input name="price" type="number" min="1" max="1000000000" step="1" value="${x.price}" required></label><label>묶음 주문의 손절가 (원)<input name="stop" type="number" min="1" max="1000000000" step="1" value="${Math.max(1,Math.floor(x.price*.9))}"></label><label>만료<select name="expiryDays"><option value="1">1일 후</option><option value="7" selected>7일 후</option><option value="0">직접 취소 전까지</option></select></label><p class="footnote">매수 현금·매도 수량을 확보합니다. 묶음 주문은 수량을 한 번 확보하며 한쪽 체결 시 반대쪽 취소. 정지 중 대기, 폐지·분할 시 취소됩니다.</p>`:'<label>투자 이유 (선택)<textarea name="memo" maxlength="200" placeholder="이 기업을 선택한 이유를 남겨 보세요."></textarea></label>'}<div id="trade-estimate" class="card"></div><p class="footnote">${taxHint()}</p><button type="submit" class="primary wide">${reserve?'예약 내용 확인':side==='buy'?'매수':'매도'}</button></form>`);
+ if(reserve&&side==='sell')$('#trade-form [name=kind]').value='limitSell';updateTradeOffer();
 }
+function updateTradeOffer(){const f=$('#trade-form');if(!f)return;const x=snapshot.stocks.find(x=>x.id===f.dataset.symbol);f._offer=x.offer?structuredClone(x.offer):null;const label=$('#trade-current');if(label)label.textContent=money(x.price);estimate();}
 function taxHint(){return snapshot.taxPolicy?'매수·매도 수수료 0.05%. DAY 3부터 주식 매도 세금 0.20%, 국내 주식형 ETF 매매 세금 0%.':'매수·매도 수수료 0.05%, 주식 매도 세금 0.15%, ETF 세금 0%.';}
 function estimatedTax(x,side,gross){if(side!=='sell'||x.market==='ETF')return 0;if(!snapshot.taxPolicy)return Math.ceil(gross*.0015);if(!snapshot.taxPolicy.enabled)return 0;return x.market==='KOSPI'?Math.floor(gross/2000)+Math.floor(gross*3/2000):Math.floor(gross/500);}
-function estimate(){const f=$('#trade-form');if(!f)return;const fd=new FormData(f),x=snapshot.stocks.find(x=>x.id===f.dataset.symbol),reserve=f.dataset.reserve==='true',side=reserve?fd.get('kind')==='limitBuy'?'buy':'sell':f.dataset.side;const gross=Number(fd.get('quantity'))*(reserve?Number(fd.get('price')):x.price),fee=Math.ceil(gross/2000),tax=estimatedTax(x,side,gross);$('#trade-estimate').innerHTML=`<p class="muted">예상 거래대금 ${money(gross)}<br>수수료 ${money(fee)} · 세금 ${money(tax)}</p><strong>예상 ${side==='buy'?'출금':'입금'} ${money(side==='buy'?gross+fee+tax:gross-fee-tax)}</strong><p>거래 후 잔액 <strong>${money(snapshot.account.cash+(side==='buy'?-(gross+fee+tax):gross-fee-tax))}</strong>`;}
+function estimate(){
+ const f=$('#trade-form');if(!f)return;const fd=new FormData(f),x=snapshot.stocks.find(x=>x.id===f.dataset.symbol),reserve=f.dataset.reserve==='true',side=reserve?fd.get('kind')==='limitBuy'?'buy':'sell':f.dataset.side;
+ const price=reserve?Number(fd.get('price')):f._offer?.price||x.price,gross=Number(fd.get('quantity'))*price,fee=Math.ceil(gross/2000),tax=estimatedTax(x,side,gross),max=side==='buy'?maxBuyQuantity(snapshot.availableCash,price):snapshot.holdings[x.id]?.available||0;
+ $('#trade-estimate').innerHTML='<p>가능한 최대 수량 <strong>'+max.toLocaleString()+'주</strong> '+view.button('최대','maxQuantity','data-max="'+max+'"','link-button')+'</p><p class="muted">예상 거래대금 '+money(gross)+'<br>수수료 '+money(fee)+' · 세금 '+money(tax)+'</p><strong>예상 '+(side==='buy'?'출금':'입금')+' '+money(side==='buy'?gross+fee+tax:gross-fee-tax)+'</strong><p>거래 후 잔액 <strong>'+money(snapshot.account.cash+(side==='buy'?-(gross+fee+tax):gross-fee-tax))+'</strong></p>';
+}
 function tutorial(){showModal('주식왕의 첫걸음',`<div class="card tutorial-card"><h3>모두가 공유하는 시장</h3><p>모든 플레이어가 같은 가격과 사건을 공유해요.<br>친구와 함께 투자하며 경쟁해 보세요.</p></div><div class="card tutorial-card"><h3>뉴스로 시장의 흐름 읽기</h3><p>뉴스를 보고 시장의 흐름을 분석해 투자해 보세요.</p></div><div class="card tutorial-card"><h3>주식 투자 연습하기</h3><p>실제 주식 용어를 사용해요. 궁금한 용어를 누르면 뜻을 볼 수 있어요.</p><p>실제 투자와는 차이가 있어요.<br>여기서의 성공이 실제 투자 실력을 보장하지는 않는다는 점을 기억해 주세요.</p></div>${view.button('시작하기','finishTutorial','','wide primary')}`);}
 const terms={'평균 매수가':'매수에 쓴 총금액을 보유 수량으로 나눈 값입니다. 이 게임은 매수 수수료를 포함합니다. 예: 10,005원에 1주를 사면 평균 매수가는 10,005원입니다.','평가손익':'아직 팔지 않은 주식의 현재 평가금액과 매입금액 차이입니다. 지금 매도할 때의 비용은 별도입니다.','실현손익':'주식을 팔아 확정된 손익입니다. 매수 원가와 매도 비용·세금을 함께 반영합니다.','상한가·하한가':'전일 기준가 대비 하루 상승·하락 범위입니다. 일반 주식은 ±30%이며 여러 날의 누적 손실은 제한하지 않습니다.','NAV':'ETF가 보유한 증권·현금·미수금에서 부채를 뺀 뒤 발행 좌수로 나눈 가치입니다. 거래 가격과 다를 수 있습니다.','배당':'권리 기준시점에 보유한 수량에 따라 확정되는 분배액입니다. 배당락과 세금을 반영하며 항상 지급되지는 않습니다.'};
+Object.assign(terms,{
+ '봉차트':'일정 시간의 시가·고가·저가·종가를 한 개의 봉으로 보여줘요. 빨강은 종가가 시가보다 높고, 파랑은 낮아요. 꼬리는 그 구간의 가장 높고 낮은 가격이에요.',
+ '시가':'해당 구간에서 처음 기록된 가격이에요. 봉차트 몸통의 한쪽 끝이 돼요.',
+ '종가':'해당 구간에서 마지막으로 기록된 가격이에요. 진행 중인 봉의 종가는 시세에 따라 바뀔 수 있어요.',
+ '고가':'해당 기간에 기록된 가장 높은 가격이에요.',
+ '저가':'해당 기간에 기록된 가장 낮은 가격이에요.',
+ '거래량':'일정 기간 사고팔린 주식의 수량이에요. 가격 변화와 함께 시장의 거래 활동을 살펴볼 때 사용해요.',
+ '매출':'기업이 제품이나 서비스를 판매해 얻은 수익이에요. 매출 전체가 기업의 이익이 되는 것은 아니에요.',
+ '영업이익':'주된 사업의 매출에서 매출원가와 판매·관리 비용을 뺀 금액이에요. 이자나 세금까지 모두 반영한 최종 이익과는 달라요.',
+ '부채':'기업이 앞으로 갚거나 이행해야 할 의무예요. 규모뿐 아니라 갚는 시점과 이자 부담도 함께 봐요.',
+ '시가총액':'주가에 발행 주식 수를 곱한 금액이에요. 기업의 주식 전체를 시장 가격으로 평가한 크기예요.',
+ '지정가':'원하는 가격을 정한 주문이에요. 매수는 지정가 이하, 매도는 지정가 이상에서 조건을 만족해야 체결돼요.',
+ '손절':'손실이 커지는 것을 막으려 매도하는 행동이에요. 손절 조건을 예약해도 거래정지나 급격한 가격 변화로 원하는 가격에 팔지 못할 수 있어요.',
+ '익절':'보유 주식을 팔아 이익을 확정하는 행동이에요. 보유 중 평가이익과 매도 후 실현이익은 비용 때문에 다를 수 있어요.',
+ '분산 투자':'자금을 여러 투자 대상에 나누는 방식이에요. 한 종목에 집중된 위험을 줄일 수 있지만 손실을 없애지는 못해요.',
+ '배당락':'배당받을 권리가 분리되면서 그 가치를 주가에 반영하는 과정이에요. 배당은 공짜로 생기는 추가 수익이 아니에요.',
+ '분배금':'ETF 등이 운용 중 얻은 수익의 일부를 투자자에게 나눠주는 금액이에요. 지급 일정과 기준을 확인해야 해요.',
+ 'iNAV':'ETF 구성자산의 최신 가격 등을 반영한 추정 순자산가치예요. 확정된 NAV나 실제 거래 가격과 차이가 날 수 있어요.',
+ '괴리율':'ETF 거래 가격과 순자산가치의 차이를 비율로 나타낸 값이에요. 양수면 거래 가격이 기준 가치보다 높다는 뜻이에요.',
+ '수수료':'거래 과정에서 부과되는 비용이에요. 이 시뮬레이션에서는 매수·매도 대금의 0.05%를 적용해요.',
+ '세금':'거래나 배당에 적용되는 비용이에요. DAY 3부터 적용하며 매수, 주식 매도, ETF 매도와 배당은 각각 규칙이 달라요.',
+ '예약 주문':'가격 등 조건을 정해 두고 나중에 체결되도록 등록하는 주문이에요. 기다리는 동안 필요한 현금이나 수량이 묶여요.',
+ '상장':'주식이 거래소에서 거래되도록 등록되는 것이에요. 상장 자체가 기업의 수익성이나 투자 수익을 보장하지는 않아요.',
+ '거래정지':'해당 종목을 일시적으로 거래할 수 없는 상태예요. 정지 중에는 일반 매수·매도 주문이 체결되지 않아요.',
+ '상장폐지':'거래소에서의 상장 자격이 끝나는 것이에요. 보유 주식의 권리가 바로 없어지는 것과는 다르지만 매매나 회수가 어려워질 수 있어요.',
+ '총자산':'현금, 주식과 ETF 평가액, 받을 금액을 합한 값이에요. 예약에 묶인 돈과 주식도 한 번만 포함해요.'
+});
+function readNews(id){if(snapshot.readNews.includes(id))return;localAction('readNews',{id},s=>{if(!s.readNews.includes(id))s.readNews.push(id);});}
 function help(name){showModal(name,`<p>${e(terms[name])}</p>`);}
 function settingsForm(name){
  if(name==='pin')return showModal('비밀번호 변경','<form id="pin-form"><label>현재 비밀번호<input name="pin" type="password" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" required></label><label>새 비밀번호<input name="newPin" type="password" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" required></label><p class="footnote">변경 후 모든 기기에서 다시 로그인해야 합니다.</p><button class="primary wide">비밀번호 변경</button></form>');
@@ -115,11 +162,14 @@ document.addEventListener('click',async event=>{
   if(action==='friends'){if(!snapshot.taxPolicy)return showModal('친구 기능 준비 중','<p>새 서버 배포 후 이용할 수 있어요.</p>');return await navigate('friends');}
   if(action.startsWith('friend'))return await friendsUI.action(action,target);
   if(action==='reload')return location.reload();
+  if(action==='close')return modal.close();
   if(action==='consentConfirm'){$('#consent').checked=true;modal.close();return;}
-  if(action==='updates')return showModal('업데이트 기록','<p><strong>2026.09.28 · 0.1.2</strong><br>로그인 화면과 기본 UI 개선, 한글 검색·로딩 표시 수정.</p><p><strong>2026.09.27 · 0.1.1</strong><br>공통 시장, 거래·예약, ETF·배당, 관리자 기능 추가.</p>');
+  if(action==='updates')return showModal('업데이트 기록','<p><strong>2026.09.28 · 0.1.4</strong><br>봉차트·뉴스 상세, 즉시 설정 반영, 회사 로고, 단계별 업적과 소리 개선.</p><p><strong>2026.09.28 · 0.1.3</strong><br>시작 자금 100만원, 친구와 공개 설정, DAY 3 세금과 계정 로그.</p><p><strong>2026.09.28 · 0.1.2</strong><br>로그인 화면과 기본 UI 개선, 한글 검색·로딩 표시 수정.</p><p><strong>2026.09.27 · 0.1.1</strong><br>공통 시장, 거래·예약, ETF·배당, 관리자 기능 추가.</p>');
+  if(action==='financials')return showModal('기업 실적표',view.lockedView(snapshot,2,'기업 실적표','매출·영업이익·부채 추이를 확인할 수 있어요.'));
   if(action==='economy'&&snapshot.day<3)return showModal('경제 지표',view.lockedView(snapshot,3,'경제 지표','금리·경기·물가를 살펴볼 수 있어요.'));
   if(action==='help')return help(target.dataset.term);
-  if(action==='chartNews'){const n=snapshot.news.find(n=>n.id===target.dataset.id);if(n)return showModal('차트 시점의 뉴스',view.news(snapshot,[n],false));return;}
+  if(action==='chartNews'||action==='newsArticle'){article=snapshot.news.find(n=>n.id===target.dataset.id);if(!article)return;newsReturn=page==='detail'?'detail':'news';readNews(article.id);return navigate('newsDetail');}
+  if(action==='newsBack')return navigate(newsReturn);
   if(action==='removePriceAlert'){await mutate('priceAlert',{remove:target.dataset.id});return;}
   if(action==='priceAlert'){const x=snapshot.stocks.find(x=>x.id===target.dataset.symbol);return showModal('목표가 알림',`<form id="price-alert-form" data-symbol="${x.id}"><p>${e(x.name)} · 현재 ${money(x.price)}</p><label>목표 가격<input name="price" type="number" min="1" max="1000000000" value="${x.price}" required></label><label>조건<select name="direction"><option value="above">이상 도달</option><option value="below">이하 도달</option></select></label><p class="footnote">다음 시세부터 조건 충족 시 한 번 알립니다. 자동 주문은 실행하지 않으며, 외부 푸시는 아직 연결되지 않았습니다.</p><button class="primary wide">목표가 등록</button></form>`);}
   if(action==='dismissInstall'){dismissInstall();modal.close();return;}
@@ -128,20 +178,21 @@ document.addEventListener('click',async event=>{
   if(action==='detail')return await navigate('detail',target.dataset.symbol);
   if(action==='period'){period=target.dataset.period;return render();}
   if(action==='marketTab'){if(target.dataset.market==='ETF'&&snapshot.day<4)return showModal('ETF',view.lockedView(snapshot,4,'ETF','여러 기업에 나누어 투자할 수 있어요.'));filter.market=target.dataset.market;return render();}
-  if(action==='favorite'){const favorites=[...snapshot.account.settings.favorites],i=favorites.indexOf(target.dataset.symbol);if(i>=0)favorites.splice(i,1);else favorites.push(target.dataset.symbol);await mutate('settings',{settings:{favorites}});return;}
+  if(action==='maxQuantity'){const f=$('#trade-form');f.elements.quantity.value=target.dataset.max;estimate();return;}
+  if(action==='favorite'){const favorites=[...snapshot.account.settings.favorites],i=favorites.indexOf(target.dataset.symbol);if(i>=0)favorites.splice(i,1);else favorites.push(target.dataset.symbol);savePreferences({favorites});return;}
   if(['buy','sell','reserve'].includes(action))return tradingForm(target.dataset.symbol,action==='sell'||page==='assets'?'sell':'buy',action==='reserve');
   if(action==='amount')return showModal('정확한 금액',`<p class="balance">${money(Number(target.dataset.value))}</p>`);
   if(action==='cancel'){showModal('예약을 취소할까요?',`<p>대기 주문을 취소하고 잠긴 현금 또는 수량을 해제합니다.</p>${view.button('취소 확정','confirmCancel',`data-id="${target.dataset.id}"`,'wide primary')}`);return;}
   if(action==='confirmCancel'){await mutate('cancel',{orderId:target.dataset.id});modal.close();return toast('예약 주문을 취소했습니다.');}
-  if(action==='readNews'){await mutate('readNews',{id:target.dataset.id});return;}
+  if(action==='readNews'){readNews(target.dataset.id);return;}
   if(action==='claim'){const r=await mutate('claim',{claimId:target.dataset.id});if(r.claimed.length){sound.effect();if(!reduced()){const coin=document.createElement('span');coin.className='coins';coin.textContent='● · ●';document.body.append(coin);setTimeout(()=>coin.remove(),700);}toast(r.claimed.length+'건을 수령했습니다.');}else toast('지급 시각·해금·종목 상태를 확인해 주세요.');return;}
   if(action==='receipt'){const r=await request('receipt',{id:target.dataset.id});return showModal('거래 영수증',view.receipt(r.receipt));}
   if(action==='moreRecords')return await loadRecords();
   if(action==='sync'||action==='retrySync'){modal.close();if(!api.token){await boot();return;}return await sync();}
   if(action==='retry'){const r=await mutate('__retry');modal.close();if(r.receipt)showModal('거래 영수증',view.receipt(r.receipt));else toast('이전 요청 결과를 확인했습니다.');return;}
   if(action==='save'){await mutate('save');return toast('서버에 저장되었습니다.');}
-  if(action==='logout'){await request('logout');api.clear();snapshot=null;pending=null;lastCash=null;modal.close();return renderLogin();}
-  if(action==='tutorial')return tutorial();if(action==='finishTutorial'){modal.close();await mutate('tutorial');installAfterLogin();return;}
+  if(action==='logout'){await request('logout');api.clear();snapshot=null;confirmedSnapshot=null;pending=null;lastCash=null;modal.close();return renderLogin();}
+  if(action==='tutorial')return tutorial();if(action==='finishTutorial'){modal.close();localAction('tutorial',{},s=>s.account.tutorial=true);installAfterLogin();return;}
   if(['pin','reset','report','notifications'].includes(action))return settingsForm(action);
   if(action==='terms'){showModal('주식 용어',Object.keys(terms).map(name=>view.button(e(name),'term',`data-name="${e(name)}"`,'wide')).join(''));return;}
   if(action==='term')return help(target.dataset.name);
@@ -150,9 +201,9 @@ document.addEventListener('click',async event=>{
   if(action==='restore'){const input=document.createElement('input');input.type='file';input.accept='.json,application/json';input.onchange=async()=>{try{const file=input.files[0];if(!file)return;if(file.size>500000)throw new Error('백업 파일이 너무 큽니다.');await mutate('restore',{backup:JSON.parse(await file.text())});toast('서버 최신 기록과 백업을 검증했습니다.');}catch(error){failure(error);}};input.click();return;}
  }catch(error){failure(error);}
 });
-document.addEventListener('input',event=>{lastInput=Date.now();if(event.target.closest('#trade-form'))estimate();if(event.target.id==='search'){filter.search=event.target.value;if(!event.isComposing)updateSearch();}});
+document.addEventListener('input',event=>{lastInput=Date.now();if(event.target.closest('#trade-form'))estimate();if(event.target.closest('#settings-form')&&event.target.type==='range')sound.settings({...snapshot.account.settings,[event.target.name]:Number(event.target.value)});if(event.target.id==='search'){filter.search=event.target.value;if(!event.isComposing)updateSearch();}});
 document.addEventListener('compositionend',event=>{if(event.target.id==='search'){filter.search=event.target.value;updateSearch();}});
-document.addEventListener('change',event=>{if(event.target.id==='sort'){filter.sort=event.target.value;render();}if(event.target.id==='favorites'){filter.favorites=event.target.checked;render();}});
+document.addEventListener('change',event=>{if(event.target.closest('#settings-form')){const input=event.target;savePreferences({[input.name]:input.type==='checkbox'?input.checked:Number(input.value)});}if(event.target.id==='sort'){filter.sort=event.target.value;render();}if(event.target.id==='favorites'){filter.favorites=event.target.checked;render();}});
 document.addEventListener('submit',async event=>{
  event.preventDefault();const form=event.target,fd=new FormData(form),data=Object.fromEntries(fd);const submit=form.querySelector('button[type=submit],button:not([type])');if(submit)submit.disabled=true;
  try{
@@ -167,14 +218,19 @@ document.addEventListener('submit',async event=>{
   if(form.id==='trade-form'){
     const id=form.dataset.symbol,quantity=Number(data.quantity);if(!Number.isSafeInteger(quantity)||quantity<1)throw new Error('수량은 1주 단위로 입력해 주세요.');
     if(form.dataset.reserve==='true'){const req={symbol:id,quantity,kind:data.kind,price:Number(data.price),stop:Number(data.stop),expiryDays:Number(data.expiryDays)};showModal('예약 내용 확인',`<p>${e(snapshot.stocks.find(x=>x.id===id).name)} · ${quantity}주</p><p>조건가 ${money(req.price)}${req.kind==='oco'?' / 손절 '+money(req.stop):''}</p><p class="footnote">확정 시 필요한 현금 또는 수량을 확보합니다.</p><form id="confirm-order-form"><button type="submit" class="primary wide">예약 등록 확정</button></form>`);$('#confirm-order-form')._order=req;}
-    else {const r=await request('quote',{symbol:id,side:form.dataset.side,quantity});const q=r.quote;showModal('거래 확인',`<p>${e(snapshot.stocks.find(x=>x.id===id).name)} · ${q.side==='buy'?'매수':'매도'} ${q.quantity}주</p><div class="receipt"><div><span>체결 예상가</span><strong>${money(q.price)}</strong></div><div><span>수수료 · 세금</span><strong>${money(q.fee)} · ${money(q.tax)}</strong></div><div class="total"><span>${q.side==='buy'?'출금':'입금'} 예정</span><strong>${money(q.net)}</strong></div></div><p class="footnote">시세가 바뀌거나 20초가 지나면 다시 확인해야 합니다.</p><form id="confirm-trade-form"><button type="submit" class="primary wide">${q.side==='buy'?'매수':'매도'} 확정</button></form>`);$('#confirm-trade-form')._quote={quoteId:q.id,memo:data.memo};}return;
+    else {
+      let payload={symbol:id,side:form.dataset.side,quantity,memo:data.memo};
+      if(form._offer){if(snapshot.serverTime+Date.now()-receivedAt>=form._offer.expires){await sync(false);throw new Error('시세를 갱신했어요. 가격을 확인하고 다시 눌러 주세요.');}payload.offer=form._offer;}
+      else {const q=await request('quote',payload);payload={quoteId:q.quote.id,memo:data.memo};}
+      const r=await mutate('trade',payload);sound.effect();showModal('거래 영수증',view.receipt(r.receipt));
+    }return;
   }
   if(form.id==='confirm-trade-form'){const r=await mutate('trade',form._quote);sound.effect();return showModal('거래 영수증',view.receipt(r.receipt));}
   if(form.id==='confirm-order-form'){await mutate('order',form._order);modal.close();await navigate('orders');return toast('예약 주문을 등록했습니다.');}
   if(form.id==='price-alert-form'){await mutate('priceAlert',{symbol:form.dataset.symbol,price:Number(data.price),direction:data.direction});modal.close();return toast('목표가를 등록했습니다.');}
-  if(form.id==='settings-form'){await mutate('settings',{settings:{bgm:Number(data.bgm),sfx:Number(data.sfx),terms:fd.has('terms'),animation:fd.has('animation')}});return toast('설정을 저장했습니다.');}
-  if(form.id==='notifications-form'){await mutate('settings',{settings:{notifications:{risk:fd.has('risk'),orders:fd.has('orders'),targets:fd.has('targets'),start:Number(data.start),end:Number(data.end),limit:Number(data.limit)}}});modal.close();return toast('알림 설정을 저장했습니다.');}
-  if(form.id==='pin-form'){await mutate('pin',data);api.clear();snapshot=null;modal.close();renderLogin('PIN이 변경되었습니다. 다시 로그인해 주세요.');return;}
+  if(form.id==='settings-form'){savePreferences({bgm:Number(data.bgm),sfx:Number(data.sfx),terms:fd.has('terms'),animation:fd.has('animation')});return toast('설정을 반영했어요.');}
+  if(form.id==='notifications-form'){modal.close();savePreferences({notifications:{risk:fd.has('risk'),orders:fd.has('orders'),targets:fd.has('targets'),start:Number(data.start),end:Number(data.end),limit:Number(data.limit)}});return toast('알림 설정을 반영했어요.');}
+  if(form.id==='pin-form'){await mutate('pin',data);api.clear();snapshot=null;confirmedSnapshot=null;modal.close();renderLogin('PIN이 변경되었습니다. 다시 로그인해 주세요.');return;}
   if(form.id==='reset-form'){await mutate('reset',{pin:data.pin});page='home';modal.close();render();return tutorial();}
   if(form.id==='report-form'){await mutate('report',{...data,environment:'v'+VERSION+' '+navigator.userAgent.slice(0,250)});modal.close();return toast('제출했습니다. 운영자가 확인할 수 있습니다.');}
  }catch(error){failure(error);}finally{if(submit)submit.disabled=false;}
@@ -188,5 +244,6 @@ async function boot(){
 document.addEventListener('visibilitychange',()=>{sound.visibility(!document.hidden);if(!document.hidden)sync();});window.addEventListener('online',()=>sync());window.addEventListener('offline',()=>connection('오프라인입니다. 거래 확정이 중지됩니다.'));
 ['pointerdown','keydown','scroll'].forEach(name=>document.addEventListener(name,()=>lastInput=Date.now(),{passive:true}));
 window.addEventListener('hashchange',()=>{const [next,id]=location.hash.slice(1).split('/');if(snapshot&&next&&next!==page){page=next;if(id)symbol=id;render();}});
-setInterval(()=>{if(snapshot&&!document.hidden){const el=$('#countdown');if(el)el.textContent=Date.now()-receivedAt>=60000?'갱신 중':stamp(snapshot.marketTime+60000).slice(11,16);}},1000);
-setInterval(()=>sync(),60000);prepareInstall();boot();
+function countdownSeconds(){return Math.max(0,60-Math.floor(((snapshot.serverTime%60000)+Date.now()-receivedAt)/1000));}
+setInterval(()=>{if(snapshot&&!document.hidden){const el=$('#countdown');if(el)el.textContent=countdownSeconds()+'초';}},1000);
+setInterval(()=>sync(),15000);prepareInstall();boot();
