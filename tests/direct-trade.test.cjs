@@ -18,8 +18,8 @@ test('displayed price cannot be forged, borrowed from another account, expired o
  h.s.market.stocks['005930'].float/=2;
  h.advance(30001);assert.throws(()=>h.call('trade',req),/시세/);
  const fresh=h.call('sync',{token:a.token});const ticket=fresh.snapshot.stocks.find(x=>x.id==='005930').offer;
- const reset=h.call('reset',{token:a.token,runId:req.runId,requestId:'reset-ticket-1',pin:'0123'});
- assert.throws(()=>h.call('trade',{...req,requestId:'new-run-trade',runId:reset.snapshot.account.runId,offer:ticket}),/시세/);
+ const reset=h.call('reset',{token:a.token,runId:req.runId,requestId:'reset-ticket-1',pin:'0123',confirm:true});
+ assert.throws(()=>h.call('trade',{...req,token:h.call('login',{name:'투자자',pin:'0123'}).token,requestId:'new-run-trade',runId:reset.snapshot.account.runId,offer:ticket}),/시세/);
  assert.equal(Object.keys(h.s.receipts).length,0);
 });
 test('maximum includes reservations and rounded fees and one extra share is rejected',async()=>{

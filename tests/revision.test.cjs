@@ -6,7 +6,7 @@ test('new runs start with one million and legacy balances remain unchanged',()=>
  delete a.startingCash;a.cash=7654321;
  const s=h.call('sync',{token:r.token}).snapshot;
  assert.equal(s.account.cash,7654321);assert.equal(s.account.startingCash,10000000);
- const reset=h.call('reset',{token:r.token,runId:a.runId,requestId:'reset-new-money',pin:'0123'}).snapshot;
+ const reset=h.call('reset',{token:r.token,runId:a.runId,requestId:'reset-new-money',pin:'0123',confirm:true}).snapshot;
  assert.equal(reset.account.cash,1000000);assert.equal(reset.account.startingCash,1000000);
 });
 test('DAY 3 tax uses KOSPI components and KOSDAQ rate while ETFs remain exempt',()=>{

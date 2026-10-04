@@ -23,6 +23,6 @@ test('friend requests reject duplicates, foreign decisions and keep account rese
  const {h,a,b,call}=setup(),bId=call(a,'friendSearch',{query:'둘투자자'}).results[0].friendId;
  call(a,'friendRequest',{friendId:bId});assert.throws(()=>call(a,'friendRequest',{friendId:bId}),/이미/);
  assert.throws(()=>call(a,'friendSettings',{nickname:'둘투자자',sharing:{}}),/사용 중/);
- const r=call(a,'reset',{pin:'0123'});assert.equal(h.s.accounts[a.snapshot.account.id].social.nickname,'첫투자자');assert.equal(Object.keys(h.s.friendships).length,1);
+ const r=call(a,'reset',{pin:'0123',confirm:true});assert.equal(h.s.accounts[a.snapshot.account.id].social.nickname,'첫투자자');assert.equal(Object.keys(h.s.friendships).length,0);
  assert.equal(r.snapshot.account.cash,1000000);
 });

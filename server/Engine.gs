@@ -85,6 +85,7 @@ King.execute = function(original,req,env) {
   if(mutation&&!adminAction&&req.runId!==a.runId)King.fail('회차가 변경되었습니다. 다시 동기화해 주세요.');
   var requestKey;
   if(mutation){if(typeof req.requestId!=='string'||!/^[a-zA-Z0-9_-]{8,100}$/.test(req.requestId))King.fail('요청 식별자를 확인해 주세요.');requestKey=auth.actor.id+':'+req.requestId;var previous=s.requests[requestKey];if(previous){if(previous.action!==action||previous.accountId!==a.id)King.fail('이미 사용한 요청 식별자입니다.');return {state:s,response:Object.assign({},previous.result,{snapshot:King.snapshot(s,a,t,auth.proxy,env)})};}}
+  if(action==='reset'||action==='deleteAccount'){var lifecycle=King.accountLifecycle(s,a,req,t,env,auth);s.revision++;if(lifecycle.snapshot)lifecycle.snapshot.revision=s.revision;return {state:s,response:lifecycle};}
   if(action==='backup'&&King.achievements)King.achievements(s,a,t,env);
   var result={},proxyBefore=auth.proxy&&mutation?King.proxyState(s,a):null;
   if(action==='sync'){if(!auth.proxy)King.activity(s,a,req,t,env);}
