@@ -5,6 +5,7 @@ import * as view from './views.js';
 import {OptimisticActions} from './optimistic.js';
 import {BrowserPreferences} from './preferences.js';
 import {animateMoney,rewardFlight} from './motion.js';
+import {tutorialPage,attendancePage} from './progression-ui.js';
 import {FriendsUI} from './friends-ui.js';
 import {AdminUI} from './admin-ui.js';
 import {sound,installApp,prepareInstall,installSuggestion,dismissInstall} from './platform.js';
@@ -16,7 +17,7 @@ let lastInput=Date.now(),receivedAt=0,toastAt=0,toastTimer,serverStatus='',lastC
 const pendingKey='king-pending-operation';
 let preferenceStorage;try{preferenceStorage=localStorage;}catch{}
 const browserPreferences=new BrowserPreferences(preferenceStorage);
-function rememberPending(req){try{if(req&&['trade','order','cancel','claim'].includes(req.action))sessionStorage.setItem(pendingKey,JSON.stringify({accountId:snapshot?.account.id,...req}));else if(!req)sessionStorage.removeItem(pendingKey);}catch{}}
+function rememberPending(req){try{if(req&&['trade','order','cancel','claim','attendance'].includes(req.action))sessionStorage.setItem(pendingKey,JSON.stringify({accountId:snapshot?.account.id,...req}));else if(!req)sessionStorage.removeItem(pendingKey);}catch{}}
 const filter={market:'KOSPI',search:'',sort:'name',favorites:false};
 if(VERSION.endsWith('-local')){const note=document.createElement('p');note.className='footnote';note.textContent='로컬 테스트 · 서버 종료 시 테스트 데이터 삭제';$('#header').append(note);}
 const admin=new AdminUI({call:mutate,read:request,modal:showModal,close:()=>modal.close(),toast,navigate,apply,getSnapshot:()=>snapshot,api});
@@ -43,7 +44,7 @@ $('#modal-close').onclick=()=>modal.close();modal.addEventListener('click',event
 function failure(error){showModal('확인이 필요해요',`<p class="error">${e(error.message)}</p>${pending?view.button('같은 요청으로 재시도','retry','','wide primary'):view.button('최신 상태 확인','sync','','wide')}`);}
 function connection(message){$('#connection').hidden=!message;$('#connection').innerHTML=message?`${e(message)}${view.button('재시도','retrySync')}`:'';}
 let foregroundRequests=0, loadingTimer;const requestLabels=[];
-function processingLabel(action,data){const names={records:'로그 확인 중',receipt:'영수증 확인 중',order:'주문 등록 중',cancel:'주문 취소 중',claim:'보상 수령 중',friends:'친구 목록 확인 중',friendSearch:'친구 검색 중',friendProfile:'친구 정보 확인 중',friendRequest:'친구 요청 보내는 중',friendRespond:'친구 요청 처리 중',friendRemove:'친구 목록 변경 중',friendSettings:'공개 설정 저장 중',backup:'백업 준비 중',restore:'백업 확인 중',save:'진행 저장 중',reset:'진행 초기화 중',deleteAccount:'회원 탈퇴 처리 중',quote:'거래 가격 확인 중',report:'문의 보내는 중',pin:'비밀번호 변경 중',priceAlert:'목표가 알림 설정 중'};return action==='trade'?(data.side==='sell'?'주식 매도 중':data.side==='buy'?'주식 매수 중':'거래 처리 중'):names[action]||'요청 처리 중';}
+function processingLabel(action,data){const names={records:'로그 확인 중',receipt:'영수증 확인 중',order:'주문 등록 중',cancel:'주문 취소 중',claim:'보상 수령 중',attendance:'출석 보상 수령 중',tutorialProgress:'안내 저장 중',friends:'친구 목록 확인 중',friendSearch:'친구 검색 중',friendProfile:'친구 정보 확인 중',friendRequest:'친구 요청 보내는 중',friendRespond:'친구 요청 처리 중',friendRemove:'친구 목록 변경 중',friendSettings:'공개 설정 저장 중',backup:'백업 준비 중',restore:'백업 확인 중',save:'진행 저장 중',reset:'진행 초기화 중',deleteAccount:'회원 탈퇴 처리 중',quote:'거래 가격 확인 중',report:'문의 보내는 중',pin:'비밀번호 변경 중',priceAlert:'목표가 알림 설정 중'};return action==='trade'?(data.side==='sell'?'주식 매도 중':data.side==='buy'?'주식 매수 중':'거래 처리 중'):names[action]||'요청 처리 중';}
 function updateProcessingLabel(){const label=$('#request-loading-text');if(label)label.textContent=requestLabels.at(-1)?.label||'요청 처리 중';}
 async function request(action,data={}){
  const visible=!['sync','explore','login','signup','settings','readNews','tutorial'].includes(action),session=api.token+'|'+api.proxyToken;
@@ -135,7 +136,12 @@ function estimate(){
  const price=reserve?Number(fd.get('price')):f._offer?.price||x.price,gross=Number(fd.get('quantity'))*price,fee=Math.ceil(gross/2000),tax=estimatedTax(x,side,gross),max=side==='buy'?maxBuyQuantity(snapshot.availableCash,price):snapshot.holdings[x.id]?.available||0;
  $('#trade-estimate').innerHTML='<p>가능한 최대 수량 <strong>'+max.toLocaleString()+'주</strong> '+view.button('최대','maxQuantity','data-max="'+max+'"','link-button')+'</p><p class="muted">예상 거래대금 '+money(gross)+'<br>수수료 '+money(fee)+' · 세금 '+money(tax)+'</p><strong>예상 '+(side==='buy'?'출금':'입금')+' '+money(side==='buy'?gross+fee+tax:gross-fee-tax)+'</strong><p>거래 후 잔액 <strong>'+money(snapshot.account.cash+(side==='buy'?-(gross+fee+tax):gross-fee-tax))+'</strong></p>';
 }
-function tutorial(){showModal('주식왕의 첫걸음',`<div class="card tutorial-card"><h3>모두가 공유하는 시장</h3><p>모든 플레이어가 같은 가격과 사건을 공유해요.<br>친구와 함께 투자하며 경쟁해 보세요.</p></div><div class="card tutorial-card"><h3>뉴스로 시장의 흐름 읽기</h3><p>뉴스를 보고 시장의 흐름을 분석해 투자해 보세요.</p></div><div class="card tutorial-card"><h3>주식 투자 연습하기</h3><p>실제 주식 용어를 사용해요. 궁금한 용어를 누르면 뜻을 볼 수 있어요.</p><p>실제 투자와는 차이가 있어요.<br>여기서의 성공이 실제 투자 실력을 보장하지는 않는다는 점을 기억해 주세요.</p></div>${view.button('시작하기','finishTutorial','','wide primary')}`);}
+let tutorialStep=0,tutorialReplay=false;
+function tutorial(replay=false){tutorialReplay=replay;tutorialStep=replay?0:(snapshot.account.tutorialStep||0);showTutorial();}
+function showTutorial(){showModal('주식왕의 첫걸음',tutorialPage(snapshot,tutorialStep,tutorialReplay));}
+function showAttendance(){showModal('출석 보상',attendancePage(snapshot));}
+async function tutorialNext(){const step=Math.min(8,tutorialStep+1);if(!tutorialReplay&&snapshot.attendance)await mutate('tutorialProgress',{step});tutorialStep=step;showTutorial();}
+async function collectAttendance(target,first){const source=target.getBoundingClientRect(),before=snapshot.account.cash;target.disabled=true;try{const r=await mutate('attendance');if(first){showTutorial();animateMoney($('#welcome-cash'),before,snapshot.account.cash,reduced());}else showAttendance();if(r.amount){sound.effect();rewardFlight(source,$('#cash'),r.amount,reduced());}}finally{if(target.isConnected)target.disabled=false;}}
 const terms={'평균 매수가':'매수에 쓴 총금액을 보유 수량으로 나눈 값입니다. 이 게임은 매수 수수료를 포함합니다. 예: 10,005원에 1주를 사면 평균 매수가는 10,005원입니다.','평가손익':'아직 팔지 않은 주식의 현재 평가금액과 매입금액 차이입니다. 지금 매도할 때의 비용은 별도입니다.','실현손익':'주식을 팔아 확정된 손익입니다. 매수 원가와 매도 비용·세금을 함께 반영합니다.','상한가·하한가':'전일 기준가 대비 하루 상승·하락 범위입니다. 일반 주식은 ±30%이며 여러 날의 누적 손실은 제한하지 않습니다.','NAV':'ETF가 보유한 증권·현금·미수금에서 부채를 뺀 뒤 발행 좌수로 나눈 가치입니다. 거래 가격과 다를 수 있습니다.','배당':'권리 기준시점에 보유한 수량에 따라 확정되는 분배액입니다. 배당락과 세금을 반영하며 항상 지급되지는 않습니다.'};
 Object.assign(terms,{
  '봉차트':'일정 시간의 시가·고가·저가·종가를 한 개의 봉으로 보여줘요. 빨강은 종가가 시가보다 높고, 파랑은 낮아요. 꼬리는 그 구간의 가장 높고 낮은 가격이에요.',
@@ -208,10 +214,18 @@ document.addEventListener('click',async event=>{
   if(action==='receipt'){const r=await request('receipt',{id:target.dataset.id});return showModal('거래 영수증',view.receipt(r.receipt));}
   if(action==='moreRecords')return await loadRecords();
   if(action==='sync'||action==='retrySync'){modal.close();if(!api.token){await boot();return;}return await sync();}
-  if(action==='retry'){const action=pending?.action,id=snapshot?.account.id,r=await mutate('__retry');if(['reset','deleteAccount'].includes(action)){finishAccountLifecycle(action,id);return;}modal.close();if(r.receipt)showModal('거래 영수증',view.receipt(r.receipt));else toast('이전 요청 결과를 확인했습니다.');return;}
+  if(action==='retry'){const action=pending?.action,id=snapshot?.account.id,r=await mutate('__retry');if(['reset','deleteAccount'].includes(action)){finishAccountLifecycle(action,id);return;}modal.close();if(action==='attendance'){if(!snapshot.account.tutorial)tutorial();else showAttendance();if(r.amount)rewardFlight(null,$('#cash'),r.amount,reduced());return;}if(r.receipt)showModal('거래 영수증',view.receipt(r.receipt));else toast('이전 요청 결과를 확인했습니다.');return;}
   if(action==='save'){await mutate('save');return toast('서버에 저장되었습니다.');}
   if(action==='logout'){await request('logout');api.clear();snapshot=null;confirmedSnapshot=null;pending=null;lastCash=null;modal.close();return renderLogin();}
-  if(action==='tutorial')return tutorial();if(action==='finishTutorial'){modal.close();localAction('tutorial',{},s=>s.account.tutorial=true);installAfterLogin();return;}
+  if(action==='tutorial')return tutorial(true);
+  if(action==='tutorialNext')return await tutorialNext();
+  if(action==='tutorialPrevious'){tutorialStep=Math.max(0,tutorialStep-1);return showTutorial();}
+  if(action==='tutorialReturn')return showTutorial();
+  if(action==='tutorialInstall')return installApp((title,body)=>showModal(title,body+view.button('안내로 돌아가기','tutorialReturn','','primary wide')));
+  if(action==='firstGrant')return await collectAttendance(target,true);
+  if(action==='attendance')return showAttendance();
+  if(action==='attendanceClaim')return await collectAttendance(target,false);
+  if(action==='finishTutorial'){if(!tutorialReplay)await mutate('tutorial');modal.close();dismissInstall();return;}
   if(['pin','reset','deleteAccount','report','notifications'].includes(action))return settingsForm(action);
   if(action==='terms'){showModal('주식 용어',Object.keys(terms).map(name=>view.button(e(name),'term',`data-name="${e(name)}"`,'wide')).join(''));return;}
   if(action==='term')return help(target.dataset.name);
@@ -229,9 +243,10 @@ document.addEventListener('submit',async event=>{
   if(form.id.startsWith('friend-'))return await friendsUI.submit(form,fd);
   if(form.id.startsWith('admin-'))return await admin.submit(form,fd);
   if(form.id==='auth-form'){
+    if(form.dataset.mode==='signup'&&data.pin!==data.pinConfirm)throw new Error('비밀번호 확인이 일치하지 않아요.');
     if(!/^[가-힣]{2,12}$/.test(data.name.normalize('NFC')))throw new Error('아이디는 완성형 한글 2~12자로 입력해 주세요.');
     startLoading('계정 확인 · 투자 기록 불러오는 중');
-    try{const r=await request(form.dataset.mode,{name:data.name.normalize('NFC'),pin:data.pin,remember:fd.has('remember'),consent:fd.has('consent'),adminSecret:data.adminSecret||'',requestId:crypto.randomUUID()});api.save(r.token,fd.has('remember'));api.adminToken=r.adminToken||'';apply(r.snapshot);page='home';render();if(!snapshot.account.tutorial)tutorial();else {welcomeSummary();if(!modal.open)installAfterLogin();}}
+    try{const r=await request(form.dataset.mode,{name:data.name.normalize('NFC'),pin:data.pin,remember:fd.has('remember'),consent:fd.has('consent'),adminSecret:data.adminSecret||'',requestId:crypto.randomUUID()});api.save(r.token,fd.has('remember'));api.adminToken=r.adminToken||'';apply(r.snapshot);page='home';render();if(!snapshot.account.tutorial)tutorial();else if(snapshot.attendance?.visible&&!snapshot.attendance.claimed)showAttendance();else {welcomeSummary();if(!modal.open)installAfterLogin();}}
     catch(error){renderLogin(error.message);}finally{finishLoading();}return;
   }
   if(form.id==='trade-form'){
@@ -256,7 +271,7 @@ document.addEventListener('submit',async event=>{
 });
 function welcomeSummary(){try{const key='king-last-'+snapshot.account.id,old=JSON.parse(localStorage.getItem(key)||'null');if(old&&old.runId===snapshot.account.runId&&snapshot.serverTime-old.at>1800000){showModal('다시 오신 것을 환영해요',`<p>지난 확인 이후 총자산 ${money(snapshot.total-old.total)} 변동</p><p>받을 배당·분배금 ${money(snapshot.dividends)}</p><p>예약 체결 ${snapshot.orders.filter(o=>o.status==='체결'&&o.closed>old.at).length}건</p><p>새 뉴스 ${snapshot.news.filter(n=>n.at>old.at).length}건</p>${view.button('내 기록 자세히 보기','records','','wide')}`);}localStorage.setItem(key,JSON.stringify({at:snapshot.serverTime,total:snapshot.total,runId:snapshot.account.runId}));}catch{}}
 async function boot(){
- if(api.token){startLoading('로그인 확인 · 최신 시세 불러오는 중');await sync(false);finishLoading();if(snapshot){const [next,id]=location.hash.slice(1).split('/');if(['home','news','market','assets','settings','total','orders','inbox','achievements','economy','detail'].includes(next)){page=next;symbol=id;}render();welcomeSummary();if(!snapshot.account.tutorial)tutorial();return;}renderLogin('다시 로그인해 주세요.');return;}
+ if(api.token){startLoading('로그인 확인 · 최신 시세 불러오는 중');await sync(false);finishLoading();if(snapshot){const [next,id]=location.hash.slice(1).split('/');if(['home','news','market','assets','settings','total','orders','inbox','achievements','economy','detail'].includes(next)){page=next;symbol=id;}render();welcomeSummary();if(!snapshot.account.tutorial)tutorial();else if(snapshot.attendance?.visible&&!snapshot.attendance.claimed)showAttendance();return;}renderLogin('다시 로그인해 주세요.');return;}
  renderLogin();try{const status=await api.status();serverStatus=status.maintenance.enabled?'점검 중: '+status.maintenance.reason:'';}catch{serverStatus='서버 연결을 확인하지 못했어요. 잠시 후 다시 시도해 주세요.';}
  if(!snapshot&&$('#auth-status')){$('#auth-status').textContent=serverStatus;$('#auth-status').hidden=!serverStatus;}
 }

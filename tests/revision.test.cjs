@@ -1,13 +1,13 @@
 const {test}=require('node:test'),assert=require('node:assert/strict');
 const {harness,signup}=require('./helpers.cjs');
-test('new runs start with one million and legacy balances remain unchanged',()=>{
+test('funded fixtures keep one million, legacy balances stay unchanged and reset awaits a new grant',()=>{
  const h=harness(),r=signup(h),a=h.s.accounts[r.snapshot.account.id];
  assert.equal(r.snapshot.account.cash,1000000);assert.equal(r.snapshot.account.startingCash,1000000);
  delete a.startingCash;a.cash=7654321;
  const s=h.call('sync',{token:r.token}).snapshot;
  assert.equal(s.account.cash,7654321);assert.equal(s.account.startingCash,10000000);
  const reset=h.call('reset',{token:r.token,runId:a.runId,requestId:'reset-new-money',pin:'0123',confirm:true}).snapshot;
- assert.equal(reset.account.cash,1000000);assert.equal(reset.account.startingCash,1000000);
+ assert.equal(reset.account.cash,0);assert.equal(reset.account.startingCash,1000000);
 });
 test('DAY 3 tax uses KOSPI components and KOSDAQ rate while ETFs remain exempt',()=>{
  const h=harness(),r=signup(h),a=h.s.accounts[r.snapshot.account.id],start=a.started;

@@ -33,7 +33,7 @@ King.settle = function(s,a,x,side,q,price,t,env,orderId,memo,admin) {
   King.int(a.cash,0,900000000000000);
   var id=env.id(),receipt=Object.assign({id,orderId:orderId||id,accountId:a.id,runId:a.runId,symbol:x.id,name:x.name,side,quantity:q,price,at:t,time:King.stamp(t),cashAfter:a.cash,memo:memo||'',newsIds:s.market.news.filter(function(n){return !n.symbol||n.symbol===x.id;}).slice(-4).map(function(n){return n.id;}),newsAtTrade:s.market.news.filter(function(n){return !n.symbol||n.symbol===x.id;}).slice(-4).map(function(n){return {title:n.title,fact:n.fact,at:n.at};})},c);s.receipts[id]=receipt;
   King.log(s,a,side==='buy'?'매수':'매도',receipt,t,env);
-  if(memo)a.statistics.memos++;
+  if(!admin)King.awardXp(a,'trade',t);if(memo)a.statistics.memos++;
   if(!admin&&x.market!=='ETF')s.market.flows.push({at:t,accountId:a.id,symbol:x.id,amount:(side==='buy'?1:-1)*c.gross});
   return receipt;
 };
