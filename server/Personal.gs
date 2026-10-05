@@ -9,9 +9,9 @@ King.personal = function(s,a,r,t,env,auth) {
   if(r.action==='claim'){
     var selected=Object.values(s.claims).filter(function(c){return c.accountId===a.id&&c.status==='대기'&&(r.claimId==='all'||r.claimId===c.id);}),claimed=[],waiting=[];
     selected.forEach(function(c){if(!c.reward&&c.runId!==a.runId)return;if(c.payAt>t){waiting.push(c.id);return;}
-      if(c.reward&&c.reward.kind==='security'){var x=s.market.stocks[c.reward.symbol];if(!x||x.status!=='상장'||x.market==='ETF'&&King.day(a,t)<4){waiting.push(c.id);return;}var h=a.holdings[x.id]||(a.holdings[x.id]={quantity:0,cost:0,since:t});h.quantity+=c.reward.quantity;}
+      if(c.reward&&c.reward.kind==='security'){var x=s.market.stocks[c.reward.symbol];if(!x||x.status!=='상장'||x.market==='ETF'&&King.day(a,t)<4){waiting.push(c.id);return;}var h=a.holdings[x.id]||(a.holdings[x.id]={quantity:0,cost:0,since:t});h.quantity+=c.reward.quantity;a.contributedCash+=c.reward.quantity*x.price;}
       else if(c.reward&&c.reward.kind==='badge'){a.achievements['reward-'+c.id]={kind:'reward',title:c.reward.badge,at:t};}
-      else a.cash+=c.net;
+      else {a.cash+=c.net;if(c.reward&&c.reward.kind==='cash')a.contributedCash+=c.net;}
       King.int(a.cash,0,900000000000000);c.status='수령';c.claimed=t;c.claimedRun=a.runId;claimed.push(c.id);King.log(s,a,c.reward?'보상 수령':'배당·분배 수령',c,t,env);
     });a.backupVersion=(a.backupVersion||0)+1;return {claimed,waiting};
   }

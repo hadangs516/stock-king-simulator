@@ -80,21 +80,24 @@ King.execute = function(original,req,env) {
   if(action==='logout'){if(!auth.proxy&&!env.isAdmin(a.name))King.log(s,a,'로그아웃',{},t,env);delete s.sessions[env.hash(req.token)];s.revision++;return {state:s,response:{ok:true}};}
   var ready=King.advance(s,t,env);
   if(!ready&&action!=='sync')return {state:s,response:{error:'MARKET_CATCHUP',message:'시장을 동기화하고 있습니다. 잠시 후 다시 시도해 주세요.',remaining:Math.floor(t/60000)-s.market.minute}};
-  var reads=['friends','friendSearch','friendProfile','sync','quote','records','receipt','backup','adminOverview','adminPlayer'];
+  var reads=['friendRanking','friendMessages','supportList','supportRead','adminSupportList','adminSupportRead','friends','friendSearch','friendProfile','sync','quote','records','receipt','backup','adminOverview','adminPlayer'];
   var mutation=reads.indexOf(action)<0;
   if(mutation&&!adminAction&&req.runId!==a.runId)King.fail('회차가 변경되었습니다. 다시 동기화해 주세요.');
+  if(adminAction&&action!=='adminUnlock'&&(!auth.admin||auth.proxy))King.fail('관리자 인증이 필요합니다.');
+  if(King.chatActions.indexOf(action)>=0&&action!=='supportRead'&&action!=='adminSupportRead')King.chatAuthorize(s,a,auth,req);
   var requestKey;
-  if(mutation){if(typeof req.requestId!=='string'||!/^[a-zA-Z0-9_-]{8,100}$/.test(req.requestId))King.fail('요청 식별자를 확인해 주세요.');requestKey=auth.actor.id+':'+req.requestId;var previous=s.requests[requestKey];if(previous){if(previous.action!==action||previous.accountId!==a.id)King.fail('이미 사용한 요청 식별자입니다.');return {state:s,response:Object.assign({},previous.result,{snapshot:King.snapshot(s,a,t,auth.proxy,env)})};}}
+  if(mutation){if(typeof req.requestId!=='string'||!/^[a-zA-Z0-9_-]{8,100}$/.test(req.requestId))King.fail('요청 식별자를 확인해 주세요.');requestKey=auth.actor.id+':'+req.requestId;var previous=s.requests[requestKey];if(previous){if(previous.action!==action||previous.accountId!==a.id)King.fail('이미 사용한 요청 식별자입니다.');var cachedResult=['friendSettings','friendRequest','friendRespond','friendRemove'].indexOf(action)>=0?King.friends(s,a,{action:'friends'},t,env,auth):previous.result;return {state:s,response:Object.assign({},cachedResult,{snapshot:King.snapshot(s,a,t,auth.proxy,env)})};}}
   if(action==='reset'||action==='deleteAccount'){var lifecycle=King.accountLifecycle(s,a,req,t,env,auth);s.revision++;if(lifecycle.snapshot)lifecycle.snapshot.revision=s.revision;return {state:s,response:lifecycle};}
   if(action==='backup'&&King.achievements)King.achievements(s,a,t,env);
   var result={},proxyBefore=auth.proxy&&mutation?King.proxyState(s,a):null;
   if(action==='sync'){if(!auth.proxy)King.activity(s,a,req,t,env);}
+  else if(King.chatActions.indexOf(action)>=0)result=King.chats(s,a,req,t,env,auth);
   else if(adminAction)result=King.admin(s,a,auth,req,env);
   else if(action==='quote')result=King.quote(s,a,req,t,env);
   else if(action==='trade')result=King.trade(s,a,req,t,env,env.isAdmin(auth.actor.name));
   else if(action==='order')result=King.order(s,a,req,t,env,env.isAdmin(auth.actor.name));
   else if(action==='cancel')result=King.cancel(s,a,req,t,env);
-  else if(['friends','friendSearch','friendProfile','friendSettings','friendRequest','friendRespond','friendRemove'].indexOf(action)>=0)result=King.friends(s,a,req,t,env,auth);
+  else if(['friendRanking','friends','friendSearch','friendProfile','friendSettings','friendRequest','friendRespond','friendRemove'].indexOf(action)>=0)result=King.friends(s,a,req,t,env,auth);
   else if(King.personal)result=King.personal(s,a,req,t,env,auth);
   else King.fail('지원하지 않는 요청입니다.');
   if(King.achievements)King.achievements(s,a,t,env);
