@@ -1,9 +1,8 @@
 var King = typeof King === 'undefined' ? {} : King;
-King.news = function(s,x,title,fact,t,impact,env) {var id='news-'+env.hash(t+':'+title+':'+fact).slice(0,24);if(s.market.news.some(function(n){return n.id===id;}))return;s.market.news.push({id,symbol:x?x.id:null,sector:x?x.sector:'경제',title,fact,at:t,time:King.stamp(t),certainty:'공시',impact:impact||0});if(x)x.trend=impact||0;if(King.alertRisk)King.alertRisk(s,x,title,fact,t,id);};
+King.news = function(s,x,title,fact,t,impact,env) {var id='news-'+env.hash(t+':'+title+':'+fact).slice(0,24);if(s.market.news.some(function(n){return n.id===id;}))return;s.market.news.push({id,symbol:x?x.id:null,sector:x?x.sector:'경제',title,fact,at:t,time:King.stamp(t),category:'공시',body:King.disclosureBody(x,title,fact,t),image:King.newsImage(x&&x.sector),impact:impact||0});if(x)x.trend=impact||0;if(King.alertRisk)King.alertRisk(s,x,title,fact,t,id);};
 King.calendar = function(s,t,env) {
-  if(King.lifecycle)King.lifecycle(s,t,env);
+  if(King.lifecycle)King.lifecycle(s,t,env);King.publishScheduled(s,t,env);
   King.initFunds(s);var local=new Date(t+32400000),hour=local.getUTCHours(),minute=local.getUTCMinutes(),sunday=local.getUTCDay()===0,stocks=Object.values(s.market.stocks).filter(function(x){return x.market!=='ETF'&&x.status==='상장';});
-  if(minute===0&&[7,17,21].indexOf(hour)>=0){for(var i=0;i<2;i++){var x=stocks[Math.floor(King.random(s.market.seed+':'+t+':news:'+i)*stocks.length)];if(x){var change=Math.round((King.random(s.market.seed+':'+t+':impact:'+i)-.5)*12);King.news(s,x,x.name+' 사업 환경 변화',x.sector+' 가상 수요 지표가 '+(change>=0?'+':'')+change+'% 변했습니다. 비용과 경쟁에 따라 주가 반응은 달라질 수 있습니다.',t,change,env);}}}
   if(sunday&&hour===0&&minute===0){stocks.forEach(function(x){var last=x.financials[x.financials.length-1],factor=.9+King.random(s.market.seed+':'+x.id+':report:'+t)*.2;var financial={at:t,revenue:Math.round(last.revenue*factor),profit:Math.round(last.profit*(factor*2-1)),debt:Math.round(last.debt*(1+(1-factor)/2))};x.financials.push(financial);x.financials=x.financials.slice(-12);x.dividend=financial.profit>0?Math.max(0,Math.floor(financial.profit*.1/x.float/13)):0;x.dividend=x.dividendOverride===undefined?Math.min(x.dividend,Math.floor(x.price*.002)):x.dividendOverride;King.news(s,x,x.name+' 주간 실적·배당 공시','가상 매출 '+financial.revenue+'원, 영업이익 '+financial.profit+'원. 이번 주 1주당 배당 '+x.dividend+'원. 오늘 18시 권리 확정, 19시 수령 가능.',t,0,env);});Object.values(s.market.stocks).filter(function(x){return x.fund;}).forEach(function(x){King.rebalance(s,x);});s.market.economy={rate:Math.round((2+King.random(s.market.seed+':rate'+t)*2)*100)/100,inflation:Math.round((1+King.random(s.market.seed+':inflation'+t)*3)*100)/100,activity:Math.round(95+King.random(s.market.seed+':activity'+t)*10)};}
   if(sunday&&hour===18&&minute===0)stocks.forEach(function(x){King.makeDividend(s,x,x.dividend||0,t,t+3600000,env);});
   s.market.calendar=s.market.calendar.filter(function(c){if(c.payAt>t)return true;if(c.type==='펀드배당'){var f=s.market.stocks[c.symbol].fund;f.receivable-=c.amount;f.cash+=c.amount;f.distributable+=c.amount;}return false;});
@@ -16,14 +15,4 @@ King.achievements = function(s,a,t,env) {
   var holdings=Object.values(a.holdings),snapshot=King.snapshot(s,a,t),values={assets:snapshot.total,realized:a.realized,shares:holdings.reduce(function(v,h){return v+h.quantity;},0),companies:holdings.length,news:a.readNews.length,time:a.playSeconds,holding:Math.max(0,...holdings.map(function(h){return Math.floor((t-h.since)/King.DAY);})),dates:a.statistics.dates.length,industries:a.statistics.industries.length,explore:a.statistics.companies.length,memos:a.statistics.memos};
   Object.keys(King.achievementTargets).forEach(function(kind){King.achievementTargets[kind].forEach(function(goal){var id=kind+'-'+goal;if(values[kind]>=goal&&!a.achievements[id]){a.achievements[id]={at:t,goal,kind};King.awardXp(a,'achievement',t);King.log(s,a,'업적 달성',{id,goal,kind},t,env);}});});a.statistics.progress=values;
   var date=King.date(t),last=a.assetHistory[a.assetHistory.length-1];if(!last||last.date!==date){a.assetHistory.push({at:t,date,total:snapshot.total});King.log(s,a,'일별 자산 요약',{total:snapshot.total},t,env);}else if(t-last.at>=3600000){a.assetHistory.push({at:t,date,total:snapshot.total});}
-};
-
-King.seedNews = function(s,t,env){
- if(s.market.introNewsSeeded)return;s.market.introNewsSeeded=true;
- if(s.market.news.length)return;
- var dayStart=Date.parse(King.date(t)+'T00:00:00+09:00'),rows=[
- ['005930','반도체 수요에 시선 집중','데이터 처리 수요가 늘면서 반도체 업계의 생산 계획이 주목받고 있다. 설비 투자 부담 속에 매출 확대와 이익 개선이 함께 나타날지가 관건이다.'],
- ['005380','자동차 업계, 생산 비용 점검','자동차 업계가 원재료 조달과 생산 효율 점검에 나섰다. 판매 확대와 함께 비용 부담을 얼마나 줄일 수 있는지가 수익성의 변수로 떠올랐다.'],
- ['035420','플랫폼 기업의 새로운 서비스 경쟁','플랫폼 기업들이 이용자를 확보하기 위한 서비스 경쟁을 이어가고 있다. 이용자 증가를 광고·커머스 등 실제 수익으로 연결하는 능력이 경쟁의 핵심으로 꼽힌다.']];
- rows.forEach(function(row,i){var at=dayStart-(5-i)*3600000;s.market.news.push({id:'intro-'+row[0],symbol:row[0],sector:s.market.stocks[row[0]].sector,title:row[1],fact:row[2],at,time:King.stamp(at),certainty:'시장 소식',impact:0});});
 };
