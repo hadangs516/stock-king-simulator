@@ -12,7 +12,7 @@ if(url.pathname==='/api'){
  let request={action:'status',version:1};if(req.method==='POST'){let body='';for await(const chunk of req){body+=chunk;if(body.length>600000)throw new Error('Too large');}request=JSON.parse(body);}
  try{const result=context.King.execute(state,request,env);state=result.state;res.setHeader('Content-Type','application/json');res.end(JSON.stringify({service:'stock-king',version:1,...result.response}));}catch(error){res.setHeader('Content-Type','application/json');res.end(JSON.stringify({error:'REQUEST_FAILED',message:error.message}));}return;
 }
-if(url.pathname==='/js/config.js'){res.setHeader('Content-Type','text/javascript');res.end("export const VERSION='0.1.4-local'; export const API_URL='/api';");return;}
+if(url.pathname==='/js/config.js'){res.setHeader('Content-Type','text/javascript');res.end("export const VERSION='0.1.5-local'; export const API_URL='/api';");return;}
 const relative=decodeURIComponent(url.pathname).replace(/^\/+/,''),file=path.resolve(root,relative||'index.html');if(!file.startsWith(root+path.sep)||relative.startsWith('.')||/^(server|tests|tools)\//.test(relative)){res.writeHead(403);res.end();return;}
 if(!fs.existsSync(file)||!fs.statSync(file).isFile()){res.writeHead(404);res.end('Not found');return;}
 res.setHeader('Content-Type',types[path.extname(file)]||'text/plain; charset=utf-8');res.setHeader('Cache-Control','no-store');res.end(fs.readFileSync(file));

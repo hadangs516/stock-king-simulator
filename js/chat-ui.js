@@ -10,7 +10,9 @@ export class ChatUI {
   await this.hooks.navigate('chat');await this.refresh();
  }
  async list(admin=false){
-  this.rememberDraft();this.listAdmin=admin;const context=this.context(),result=await this.hooks.read(admin?'adminSupportList':'supportList');if(context!==this.context())return;
+  this.rememberDraft();this.listAdmin=admin;this.conversations=[];const context=this.context(),request={};this.listRequest=request;
+  await this.hooks.navigate('support');
+  const result=await this.hooks.read(admin?'adminSupportList':'supportList');if(context!==this.context()||this.listRequest!==request||!this.hooks.isSupport())return;
   this.conversations=result.conversations;await this.hooks.navigate('support');
  }
  listView(){return `${button('돌아가기',this.listAdmin?'admin':'settings','','back')}<div class="page-head"><h2>${this.listAdmin?'고객센터 문의':'고객센터'}</h2>${this.listAdmin?'':button('새 채팅','chatNew','','primary')}</div><p class="footnote">문의별로 대화를 이어가세요. 답변은 이 화면에서 확인할 수 있습니다.</p><div class="list">${(this.conversations||[]).map(c=>button(`<strong>${e(c.category)}${c.nickname?' · '+e(c.nickname):''}</strong><span>${e(c.preview)}</span><small>${stamp(c.at,true)}${c.unread?' · 새 답변 '+c.unread:''}</small>`,'chatSupport',`data-id="${e(c.id)}" data-title="${e(c.category)}"`,'conversation-card')).join('')||'<p class="empty">아직 문의가 없어요.</p>'}</div>`;}

@@ -40,6 +40,7 @@ export function chart(points, label = '가격 흐름', markers = []) {
   return `<figure class="chart"><svg viewBox="0 0 380 155" role="img" aria-label="${escape(label)}: 최저 ${money(lo)}, 최고 ${money(hi)}"><path d="M10 20H370M10 75H370M10 130H370" class="gridline"/><polyline points="${coordinates.split(' ').slice(0,-1).join(' ')}"/><polyline class="latest-segment" pathLength="1" points="${coordinates.split(' ').slice(-2).join(' ')}"/><circle cx="370" cy="${130-(values.at(-1)-lo)/span*110}" r="4"/>${dots}</svg><figcaption><span>${money(lo)}</span><span>${money(hi)}</span></figcaption></figure>${visible.length?`<p class="footnote">차트 표시: 매수 빨강 · 매도 파랑 · 뉴스 금색</p><div class="markers">${visible.slice(-12).map(m=>`<button type="button" class="link-button" data-action="${m.kind==='news'?'chartNews':'receipt'}" data-id="${escape(m.id)}">${escape(m.label)} · ${stamp(m.at).slice(5,16)}</button>`).join('')}</div>`:''}`;
 }
 export const icons = {
+  bell:'<path d="M6 9a6 6 0 0 1 12 0v6l2 3H4l2-3V9m4 12h4"/>',
   home: '<path d="m3 10 9-7 9 7v10H3zM9 20v-7h6v7"/>', news: '<path d="M5 3h14v18H5zM8 7h8M8 11h8M8 15h3M8 18h8"/>',
   market: '<path d="M4 20V10m5 10V4m6 16v-7m5 7V7M2 20h20"/>', assets: '<path d="M3 6h18v14H3zM3 6l14-3v3M15 11h6v5h-6z"/>', settings:'<path d="M4 7h16M4 17h16M8 4v6m8 4v6"/>'
 };

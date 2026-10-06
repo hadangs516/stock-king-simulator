@@ -1,0 +1,39 @@
+/* User-provided October reference: gold artwork, cream panels and green controls. */
+:root{--ink:#12432a;--muted:#635c42;--line:#dfc77d;--soft:#fff5cf;--gold:#bc8409;--up:#bb302c;--down:#245eca;background:#183d2b;color:#223325}
+body{color:#223325;background:radial-gradient(ellipse at top,#fff0a3 0,#cab655 48%,#183d2b 100%);background-attachment:fixed}
+.phone{background:linear-gradient(110deg,#ffe449,#fff185 48%,#ffdc31);border-color:#c8a33f;box-shadow:0 0 50px #15281735}
+header{padding:0 10px 10px;background:#ffdf37;border-bottom:1px solid #c89d25;backdrop-filter:none}
+.brand{display:block;margin:0 -10px;background:#ffe335;line-height:0}
+.brand-art{display:block;width:100%;height:auto;aspect-ratio:24/7;object-fit:cover}
+#ticker{grid-template-columns:minmax(0,1fr) minmax(0,1fr) 42px 38px;gap:8px;background:#fffdf0;border:1px solid #d5b143;border-radius:13px;padding:10px;margin-top:0;box-shadow:inset 0 2px 0 #fff,0 2px 3px #98710020}
+#ticker .time{grid-column:1/-1;text-align:right;border-top:1px solid #ede3c0;padding-top:3px}#ticker .ticker-inbox{text-align:center}#ticker .ticker-inbox svg{width:23px;height:23px;fill:none;stroke:currentColor;stroke-width:1.8}#ticker .day{padding:3px}
+#ticker button{color:#203b2b}#ticker small{color:#5f604b}#ticker .day{color:#17462c;background:#f5e5a4}#ticker strong{font-size:13px}
+header>.footnote{font-size:10px;color:#5b4b12;padding:4px 0 0}
+main{padding:18px 14px}.page-head{margin-bottom:16px}.page-head>button{flex-shrink:0;white-space:nowrap;padding-inline:12px;font-size:13px}.page-head h2{color:#173b28;text-shadow:0 1px #fff7ba}.muted,.footnote{color:var(--muted)}
+button{border-color:#d9c889;color:#244b32;background:linear-gradient(#fffef9,#fff6d6);box-shadow:0 2px 0 #baa45725}button:hover{background:#fff3be}
+input,select,textarea{color:#20362a;border-color:#c5b47f;background:#fffef8}input[type=checkbox],input[type=range]{accent-color:#168444}
+.primary,.hero button{color:#fff;background:linear-gradient(#16803d,#08612d);border-color:#087238;box-shadow:inset 0 1px 0 #ffffff55,0 3px 0 #055427}
+.primary:hover,.hero button:hover{background:#087633}.secondary{color:#174a2b;background:#eef5ce;border-color:#b4c38c}
+.tabs button.selected,.tabs button.active{color:#18331b;background:linear-gradient(#fff86b,#f8cd14);border-color:#dca00c;box-shadow:inset 0 1px #fff,0 2px 0 #b38c16}
+.card,.metric,.stock,.list>button,.list>button:last-child,.news-card,.news-preview,.news-article,.attendance-day{background:#fffdf1;border:1px solid #dfca85;border-radius:14px;box-shadow:0 2px 0 #a2852519}
+.card,.news-card{padding:16px}.stock{padding:14px}.metric:first-child{background:#fff7e4;border-color:#ebcd94}.metric:nth-child(2){background:#edf8e7;border-color:#b8d198}
+.hero{color:#fff9cc;background:linear-gradient(135deg,#123b29,#1c613b);border:2px solid #bf951e;box-shadow:inset 0 1px 0 #f9e59b55,0 3px 8px #6d591d35;padding:21px}
+.hero .eyebrow,.hero .muted{color:#e3eabb}.hero .money-button{background:transparent;color:#fff4a2;box-shadow:none}.hero h2{color:#f4edc5}.hero .money-button:hover{background:transparent}
+.growth-card{background:#edf5ce;border:1px solid #aab66b;color:#234b2e}.growth-card small{color:#46603a}.growth-card progress{accent-color:#248348}
+.tag{background:#eef1db;color:#4d6244}.tag.gold{background:#ffe597;color:#654306}.company-logo{background:#f5f4e3;color:#22532e}
+.stock-actions .primary{background:#e7f2db;border-color:#a1bf7e;color:#1d5b2b;box-shadow:none}
+.bar{background:#ede4c3}.bar>span{background:#198148}.chart polyline{stroke:#2e9255}.chart circle{fill:#2e9255}
+.candle-chart{padding:10px 5px 8px;background:#0b2647;border:2px solid #b99836;border-radius:16px;box-shadow:inset 0 0 18px #07192e}.candle-chart .gridline{stroke:#254567}.candle-chart text{fill:#d4e4f7}.candle-chart figcaption{color:#e0eafa;padding-inline:8px}.candle-chart .up{color:#ff7b7b}.candle-chart .down{color:#6cafff}
+.news-categories{gap:5px;padding-bottom:9px;scrollbar-width:thin;scrollbar-color:#bba75a transparent}.news-categories button{padding:8px 12px;font-size:12px}
+.news-categories button.active{color:#fff;background:linear-gradient(#a749f5,#6a12ba);border-color:#7224ae}
+.news-date h3{color:#5e4b12}.news-preview{padding:14px}.news-article{padding:16px}.news-article h2{color:#1d3425}.news-article .article-label{color:#6a654e}
+#nav{background:linear-gradient(#163c28,#08281a);border:1px solid #7c883b;border-radius:18px 18px 0 0;box-shadow:0 -3px 9px #293b2340;padding:8px 8px max(8px,env(safe-area-inset-bottom))}
+#nav button{color:#dbe7cf;background:transparent;border:1px solid transparent;box-shadow:none}#nav button.active{color:#314014;background:linear-gradient(#fff680,#ffcf0a);border-color:#fff09b;box-shadow:0 0 12px #ffe95380,inset 0 1px #fff}
+dialog{color:#263a28;background:#fffdf1;border:2px solid #c4a34a}dialog::backdrop{background:#08271c99}.back{background:transparent;color:#2c5035;box-shadow:none}
+.chat-messages{background:#eaf0d9;border:1px solid #c6d0ac}.message{background:#fffef7}.message.mine{background:#d4edc4}.message time,.message small{color:#53634b}
+.auth{margin:0 auto;padding:0 18px 24px;background:#fffdf0;border:1px solid #d2b752;border-radius:20px;box-shadow:0 8px 24px #77611730;overflow:hidden}.auth-art{display:block;width:calc(100% + 36px);max-width:none;height:auto;margin:0 -18px 18px}.auth h1{font-size:20px;margin-bottom:18px;color:#204c2d}
+.is-auth main{padding:24px 14px}.boot{background:radial-gradient(ellipse at top,#fffce1,#ffdd3a);margin:-24px -14px;padding-inline:22px}.boot-symbol{color:#114827;background:#ffdb43;border:2px solid #b18a13;box-shadow:0 5px 0 #ad8114}.boot h1{color:#1a502d;text-shadow:0 2px #fff2ac}.boot .progress{background:#825b1c;border:2px solid #e5ba41;height:17px}.boot .progress>span{background:linear-gradient(#a7ed45,#20a842)}.boot #loading-stage,.boot-version{color:#544319}
+#request-loading>div{color:#20472c;background:#fffdf1;border-color:#d5be68}.spinner{border-color:#dfddb8;border-top-color:#1a8946}#toast{background:#153e29;color:#fff8d4}
+:focus-visible{outline:3px solid #925900;outline-offset:3px}
+@media(max-width:350px){main{padding:15px 10px}.brand-art{aspect-ratio:24/7}#ticker{gap:5px;padding:8px}#ticker strong{font-size:12px}#ticker .time small{font-size:9px}.card{padding:14px}.balance{font-size:27px}.news-categories button{padding-inline:10px}.auth{padding-inline:14px}.auth-art{width:calc(100% + 28px);margin-inline:-14px}}
+@media(max-height:700px){.is-auth main{padding-block:12px}.auth-art{max-height:105px;object-fit:cover}.auth h1{font-size:18px;margin-bottom:12px}.auth{padding-bottom:18px}}
