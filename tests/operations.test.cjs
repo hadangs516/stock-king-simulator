@@ -2,7 +2,7 @@ const {test}=require('node:test'),assert=require('node:assert/strict');
 const {harness,signup}=require('./helpers.cjs');
 test('maintenance login carries the strengthened proof into subsequent requests',()=>{
  const h=harness();signup(h,'운영자');h.s.maintenance={enabled:true,reason:'검사',until:''};
- const r=h.call('login',{name:'운영자',pin:'0123',adminSecret:'test-only-admin'});
+ const r=h.call('login',{name:'운영자',pin:'0123',takeover:true,adminSecret:'test-only-admin'});
  assert.ok(r.adminToken);assert.equal(h.call('sync',{token:r.token,adminToken:r.adminToken}).snapshot.admin,true);
  assert.throws(()=>h.call('sync',{token:r.token}),/점검/);
 });

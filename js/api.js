@@ -4,12 +4,15 @@ const safeRead = storage => { try { return storage.getItem(key); } catch { retur
 export const api = {
   token: safeRead(sessionStorage) || safeRead(localStorage), adminToken: '', proxyToken: '',
   save(token, remember) {
-    this.clear(); this.token = token;
+    this.clear();
+    for (const storage of [sessionStorage, localStorage]) { try { storage.removeItem(key); } catch {} }
+    this.token = token;
     try { (remember ? localStorage : sessionStorage).setItem(key, token); } catch { /* Current tab remains signed in. */ }
   },
   clear() {
+    const previous = this.token;
     this.token = ''; this.adminToken = ''; this.proxyToken = '';
-    try { sessionStorage.removeItem(key); localStorage.removeItem(key); } catch { /* Storage may be unavailable. */ }
+    for (const storage of [sessionStorage, localStorage]) { try { if (safeRead(storage) === previous) storage.removeItem(key); } catch { /* Storage may be unavailable. */ } }
   },
   async send(action, data = {}) {
     if (!navigator.onLine) throw new Error('인터넷 연결이 끊겼습니다. 연결 후 다시 시도해 주세요.');

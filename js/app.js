@@ -43,7 +43,7 @@ document.addEventListener('error',event=>{if(event.target.matches?.('.company-lo
 $('#toast').onclick=()=>{if(Date.now()-toastAt>=1000)$('#toast').hidden=true;};
 function showModal(title,content){const receipt=title.includes('영수증');modal.classList.toggle('trade-receipt',receipt);$('#modal-close').hidden=receipt;$('#modal-title').textContent=title;$('#modal-content').innerHTML=content+(receipt?view.button('확인','close','','primary wide'):'');if(!modal.open)modal.showModal();}
 $('#modal-close').onclick=()=>modal.close();modal.addEventListener('click',event=>{if(event.target===modal){const box=modal.getBoundingClientRect();if(event.clientX<box.left||event.clientX>box.right||event.clientY<box.top||event.clientY>box.bottom)modal.close();}});
-function failure(error){showModal('확인이 필요해요',`<p class="error">${e(error.message)}</p>${pending?view.button('같은 요청으로 재시도','retry','','wide primary'):view.button('최신 상태 확인','sync','','wide')}`);}
+function failure(error){if(error.loginRequired)return;showModal('확인이 필요해요',`<p class="error">${e(error.message)}</p>${pending?view.button('같은 요청으로 재시도','retry','','wide primary'):view.button('최신 상태 확인','sync','','wide')}`);}
 function connection(message){$('#connection').hidden=!message;$('#connection').innerHTML=message?`${e(message)}${view.button('재시도','retrySync')}`:'';}
 let foregroundRequests=0, loadingTimer;const requestLabels=[];
 function processingLabel(action,data){const names={records:'로그 확인 중',receipt:'영수증 확인 중',order:'주문 등록 중',cancel:'주문 취소 중',claim:'보상 수령 중',attendance:'출석 보상 수령 중',tutorialProgress:'안내 저장 중',friends:'친구 목록 확인 중',friendSearch:'친구 검색 중',friendProfile:'친구 정보 확인 중',friendRequest:'친구 요청 보내는 중',friendRespond:'친구 요청 처리 중',friendRemove:'친구 목록 변경 중',friendSettings:'공개 설정 저장 중',friendRanking:'친구 순위 확인 중',friendMessages:'대화 불러오는 중',friendSend:'메시지 보내는 중',supportList:'문의 목록 확인 중',supportRead:'대화 불러오는 중',supportCreate:'새 문의 만드는 중',supportSend:'메시지 보내는 중',adminSupportList:'문의 목록 확인 중',adminSupportRead:'대화 불러오는 중',adminSupportSend:'답변 보내는 중',backup:'백업 준비 중',restore:'백업 확인 중',save:'진행 저장 중',reset:'진행 초기화 중',deleteAccount:'회원 탈퇴 처리 중',quote:'거래 가격 확인 중',report:'문의 보내는 중',pin:'비밀번호 변경 중',priceAlert:'목표가 알림 설정 중'};return action==='trade'?(data.side==='sell'?'주식 매도 중':data.side==='buy'?'주식 매수 중':'거래 처리 중'):names[action]||'요청 처리 중';}
@@ -52,7 +52,7 @@ async function request(action,data={},background=false){
  const visible=!background&&!['sync','explore','login','signup','settings','readNews','tutorial'].includes(action),session=api.token+'|'+api.proxyToken;
  const job={label:processingLabel(action,data)};if(visible){requestLabels.push(job);updateProcessingLabel();}
  if(visible&&foregroundRequests++===0)loadingTimer=setTimeout(()=>{const overlay=$('#request-loading');overlay.hidden=false;if(overlay.showPopover)overlay.showPopover();else (modal.open?modal:document.body).append(overlay);},1000);
- try{const result=await api.send(action,data);if(!['login','signup'].includes(action)&&session!==api.token+'|'+api.proxyToken)throw Object.assign(new Error('계정이 변경되어 이전 응답을 적용하지 않았어요.'),{definitive:true});return result;}catch(error){if(!['login','signup'].includes(action)&&session!==api.token+'|'+api.proxyToken)throw Object.assign(new Error('계정이 변경되어 이전 응답을 적용하지 않았어요.'),{definitive:true});throw error;}finally{if(visible){requestLabels.splice(requestLabels.indexOf(job),1);updateProcessingLabel();}if(visible&&--foregroundRequests===0){clearTimeout(loadingTimer);const overlay=$('#request-loading');if(overlay.hidePopover)overlay.hidePopover();overlay.hidden=true;if(!overlay.showPopover)document.body.append(overlay);}}
+ try{const result=await api.send(action,data);if(!['login','signup'].includes(action)&&session!==api.token+'|'+api.proxyToken)throw Object.assign(new Error('계정이 변경되어 이전 응답을 적용하지 않았어요.'),{definitive:true});return result;}catch(error){if(!['login','signup'].includes(action)&&session!==api.token+'|'+api.proxyToken)throw Object.assign(new Error('계정이 변경되어 이전 응답을 적용하지 않았어요.'),{definitive:true});if(!['login','signup'].includes(action)&&/로그인 인증|다른 기기 또는 브라우저에서 로그인/.test(error.message)){error.loginRequired=true;api.clear();snapshot=null;confirmedSnapshot=null;pending=null;rememberPending(null);lastCash=null;modal.close();renderLogin(error.message);}throw error;}finally{if(visible){requestLabels.splice(requestLabels.indexOf(job),1);updateProcessingLabel();}if(visible&&--foregroundRequests===0){clearTimeout(loadingTimer);const overlay=$('#request-loading');if(overlay.hidePopover)overlay.hidePopover();overlay.hidden=true;if(!overlay.showPopover)document.body.append(overlay);}}
 }
 let bootTimer, bootRefresh;
 function startLoading(stage){
@@ -96,7 +96,7 @@ async function mutate(action,data={}){
 async function sync(renderAfter=true){
  if(!api.token||document.hidden)return;if(syncing)return syncing;if(busy)return;
  syncing=(async()=>{try{const result=await request('sync',{active:document.hasFocus()&&Date.now()-lastInput<300000});apply(result.snapshot);if(renderAfter&&!modal.open&&document.activeElement?.tagName!=='INPUT'&&document.activeElement?.tagName!=='TEXTAREA'&&!['admin','market'].includes(page))render();if(page==='market')refreshMarketPrices();if(snapshot?.catchingUp)setTimeout(()=>sync(),1500);}
- catch(error){connection(error.message);if(/인증.*만료|로그인 인증/.test(error.message)){api.clear();snapshot=null;confirmedSnapshot=null;renderLogin(error.message);}}finally{syncing=null;}})();return syncing;
+ catch(error){if(!error.loginRequired)connection(error.message);}finally{syncing=null;}})();return syncing;
 }
 function nav(){const tabs=[['home','홈'],['news','뉴스'],['market','거래소'],['assets','내 자산'],['settings','설정']];$('#nav').innerHTML=tabs.map(([id,name])=>`<button type="button" data-page="${id}" class="${page===id?'active':''}" ${page===id?'aria-current="page"':''}>${icon(id)}${name}</button>`).join('');}
 function render(){
@@ -109,6 +109,14 @@ function finishAccountLifecycle(action,id){
  try{localStorage.removeItem('king-last-'+id);}catch{}
  api.clear();snapshot=null;confirmedSnapshot=null;pending=null;rememberPending(null);records=[];lastCash=null;friendsUI.data=null;friendsUI.results=[];page='home';modal.close();
  renderLogin(action==='deleteAccount'?'회원 탈퇴가 완료되었습니다.':'진행을 초기화했습니다. 다시 로그인해 주세요.');
+}
+function confirmLoginReplacement(){
+ return new Promise(resolve=>{
+  modal.returnValue='';
+  showModal('이미 로그인 중입니다',`<p>이미 다른 기기 또는 브라우저에서 로그인 중입니다.</p><p>여기서 로그인하면 기존 접속은 로그아웃됩니다. 로그인하시겠어요?</p><div class="actions">${view.button('취소','close')}<button type="button" id="replace-login" class="primary">로그인</button></div>`);
+  modal.addEventListener('close',()=>resolve(modal.returnValue==='login'),{once:true});
+  $('#replace-login').onclick=()=>modal.close('login');
+ });
 }
 function renderLogin(message=''){finishLoading();document.body.classList.add('is-auth');cancelAnimationFrame(animationFrame);$('#ticker').hidden=true;$('#nav').hidden=true;$('#proxy-banner').hidden=true;main.innerHTML=view.loginView(authMode,message);}
 function refreshMarketPrices(){document.querySelectorAll('.stock[data-symbol]').forEach(el=>{const x=snapshot.stocks.find(v=>v.id===el.dataset.symbol);if(!x)return;const price=el.querySelector('.stock-price strong'),delta=el.querySelector('.stock-price p'),value=(x.price/x.base-1)*100;animateMoney(price,Number(price.dataset.amount)||x.price,x.price,reduced());delta.textContent=percent(value);delta.className=value>=0?'up':'down';});}
@@ -197,7 +205,7 @@ document.addEventListener('click',async event=>{
   if(action==='reload')return location.reload();
   if(action==='close')return modal.close();
   if(action==='consentConfirm'){$('#consent').checked=true;modal.close();return;}
-  if(action==='updates')return showModal('업데이트 기록','<p><strong>2026.10.06 · 0.1.5</strong><br>뉴스 분류·가상 기사와 수시 발행, 시세 변동 개선, 게임 화면과 아이콘 교체, 거래·고객센터 오류 수정.</p><p><strong>2026.09.28 · 0.1.4</strong><br>봉차트·뉴스 상세, 즉시 설정 반영, 회사 로고, 단계별 업적과 소리 개선.</p><p><strong>2026.09.28 · 0.1.3</strong><br>시작 자금 100만원, 친구와 공개 설정, DAY 3 세금과 계정 로그.</p><p><strong>2026.09.28 · 0.1.2</strong><br>로그인 화면과 기본 UI 개선, 한글 검색·로딩 표시 수정.</p><p><strong>2026.09.27 · 0.1.1</strong><br>공통 시장, 거래·예약, ETF·배당, 관리자 기능 추가.</p>');
+  if(action==='updates')return showModal('업데이트 기록','<p><strong>2026.10.06 · 0.1.6</strong><br>중복 로그인 확인과 기존 접속 종료.</p><p><strong>2026.10.06 · 0.1.5</strong><br>뉴스 분류·가상 기사와 수시 발행, 시세 변동 개선, 게임 화면과 아이콘 교체, 거래·고객센터 오류 수정.</p><p><strong>2026.09.28 · 0.1.4</strong><br>봉차트·뉴스 상세, 즉시 설정 반영, 회사 로고, 단계별 업적과 소리 개선.</p><p><strong>2026.09.28 · 0.1.3</strong><br>시작 자금 100만원, 친구와 공개 설정, DAY 3 세금과 계정 로그.</p><p><strong>2026.09.28 · 0.1.2</strong><br>로그인 화면과 기본 UI 개선, 한글 검색·로딩 표시 수정.</p><p><strong>2026.09.27 · 0.1.1</strong><br>공통 시장, 거래·예약, ETF·배당, 관리자 기능 추가.</p>');
   if(action==='financials')return showModal('기업 실적표',view.lockedView(snapshot,2,'기업 실적표','매출·영업이익·부채 추이를 확인할 수 있어요.'));
   if(action==='economy'&&snapshot.day<3)return showModal('경제 지표',view.lockedView(snapshot,3,'경제 지표','금리·경기·물가를 살펴볼 수 있어요.'));
   if(action==='help')return help(target.dataset.term);
@@ -257,7 +265,9 @@ document.addEventListener('submit',async event=>{
     if(form.dataset.mode==='signup'&&data.pin!==data.pinConfirm)throw new Error('비밀번호 확인이 일치하지 않아요.');
     if(!/^[가-힣]{2,12}$/.test(data.name.normalize('NFC')))throw new Error('아이디는 완성형 한글 2~12자로 입력해 주세요.');
     startLoading('계정 확인 · 투자 기록 불러오는 중');
-    try{const r=await request(form.dataset.mode,{name:data.name.normalize('NFC'),pin:data.pin,remember:fd.has('remember'),consent:fd.has('consent'),adminSecret:data.adminSecret||'',requestId:crypto.randomUUID()});api.save(r.token,fd.has('remember'));api.adminToken=r.adminToken||'';apply(r.snapshot);page='home';render();if(!snapshot.account.tutorial)tutorial();else if(snapshot.attendance?.visible&&!snapshot.attendance.claimed)showAttendance();else {welcomeSummary();if(!modal.open)installAfterLogin();}}
+    try{const credentials={name:data.name.normalize('NFC'),pin:data.pin,remember:fd.has('remember'),consent:fd.has('consent'),adminSecret:data.adminSecret||'',requestId:crypto.randomUUID()};let r=await request(form.dataset.mode,credentials);
+    if(r.loginConflict){finishLoading();const accepted=await confirmLoginReplacement();if(!accepted){renderLogin('로그인을 취소했습니다. 기존 접속은 유지됩니다.');return;}startLoading('이전 접속 종료 · 로그인 중');r=await request('login',{...credentials,takeover:true});}
+    api.save(r.token,fd.has('remember'));api.adminToken=r.adminToken||'';apply(r.snapshot);page='home';render();if(!snapshot.account.tutorial)tutorial();else if(snapshot.attendance?.visible&&!snapshot.attendance.claimed)showAttendance();else {welcomeSummary();if(!modal.open)installAfterLogin();}}
     catch(error){renderLogin(error.message);}finally{finishLoading();}return;
   }
   if(form.id==='trade-form'){
@@ -282,7 +292,7 @@ document.addEventListener('submit',async event=>{
 });
 function welcomeSummary(){try{const key='king-last-'+snapshot.account.id,old=JSON.parse(localStorage.getItem(key)||'null');if(old&&old.runId===snapshot.account.runId&&snapshot.serverTime-old.at>1800000){showModal('다시 오신 것을 환영해요',`<p>지난 확인 이후 총자산 ${money(snapshot.total-old.total)} 변동</p><p>받을 배당·분배금 ${money(snapshot.dividends)}</p><p>예약 체결 ${snapshot.orders.filter(o=>o.status==='체결'&&o.closed>old.at).length}건</p><p>새 뉴스 ${snapshot.news.filter(n=>n.at>old.at).length}건</p>${view.button('내 기록 자세히 보기','records','','wide')}`);}localStorage.setItem(key,JSON.stringify({at:snapshot.serverTime,total:snapshot.total,runId:snapshot.account.runId}));}catch{}}
 async function boot(){
- if(api.token){startLoading('로그인 확인 · 최신 시세 불러오는 중');await sync(false);finishLoading();if(snapshot){const [next,id]=location.hash.slice(1).split('/');if(['home','news','market','assets','settings','total','orders','inbox','achievements','economy','detail'].includes(next)){page=next;symbol=id;}render();welcomeSummary();if(!snapshot.account.tutorial)tutorial();else if(snapshot.attendance?.visible&&!snapshot.attendance.claimed)showAttendance();return;}renderLogin('다시 로그인해 주세요.');return;}
+ if(api.token){startLoading('로그인 확인 · 최신 시세 불러오는 중');await sync(false);finishLoading();if(snapshot){const [next,id]=location.hash.slice(1).split('/');if(['home','news','market','assets','settings','total','orders','inbox','achievements','economy','detail'].includes(next)){page=next;symbol=id;}render();welcomeSummary();if(!snapshot.account.tutorial)tutorial();else if(snapshot.attendance?.visible&&!snapshot.attendance.claimed)showAttendance();return;}if(!$('#auth-form'))renderLogin('다시 로그인해 주세요.');return;}
  renderLogin();try{const status=await api.status();serverStatus=status.maintenance.enabled?'점검 중: '+status.maintenance.reason:'';}catch{serverStatus='서버 연결을 확인하지 못했어요. 잠시 후 다시 시도해 주세요.';}
  if(!snapshot&&$('#auth-status')){$('#auth-status').textContent=serverStatus;$('#auth-status').hidden=!serverStatus;}
 }

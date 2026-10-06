@@ -13,6 +13,11 @@ King.login = function(s,r,env) {
   var isAdmin=env.isAdmin(name)&&env.adminCheck(r.adminSecret||'');
   if(s.maintenance.enabled&&!isAdmin)King.fail('점검 중: '+s.maintenance.reason);
   if(a.restricted&&(!a.restricted.until||a.restricted.until>t)&&!isAdmin)King.fail('이용 제한: '+a.restricted.reason);
+  var active=Object.values(s.sessions).some(function(v){return v.accountId===a.id&&!v.replacedAt&&v.expires>t;});
+  if(active&&r.takeover!==true)return {state:s,response:{loginConflict:true}};
+  Object.keys(s.sessions).forEach(function(k){var v=s.sessions[k];if(v.accountId!==a.id)return;if(v.expires<=t)delete s.sessions[k];else if(!v.replacedAt){v.replacedAt=t;v.expires=Math.min(v.expires,t+King.DAY);}});
+  Object.keys(s.adminSessions).forEach(function(k){if(s.adminSessions[k].accountId===a.id)delete s.adminSessions[k];});
+  Object.keys(s.proxies).forEach(function(k){if(s.proxies[k].actorId===a.id)delete s.proxies[k];});
   King.ensureProgression(a);a.lastLogin=t;a.lastSeen=t;a.logins++;if(!env.isAdmin(a.name))King.log(s,a,'로그인',{},t,env);
   var token=env.id()+env.id()+env.id();s.sessions[env.hash(token)]={accountId:a.id,expires:t+(r.remember?30*King.DAY:12*3600000)};
   King.advance(s,t,env);if(King.achievements)King.achievements(s,a,t,env);s.revision++;
@@ -24,6 +29,7 @@ King.login = function(s,r,env) {
 King.authenticate = function(s,r,env) {
   if(typeof r.token!=='string')King.fail('로그인 인증이 필요합니다.');var session=s.sessions[env.hash(r.token)],t=env.now();
   if(!session||session.expires<=t||!s.accounts[session.accountId])King.fail('로그인 인증이 만료되었습니다.');
+  if(session.replacedAt)King.fail('다른 기기 또는 브라우저에서 로그인하여 로그아웃되었습니다.');
   var actor=s.accounts[session.accountId],proof=s.adminSessions[env.hash(r.adminToken||'')];
   var admin=env.isAdmin(actor.name)&&proof&&proof.accountId===actor.id&&proof.session===env.hash(r.token)&&proof.expires>t;
   if(r.proxyToken){var proxy=s.proxies[env.hash(r.proxyToken)];if(!admin||!proxy||proxy.actorId!==actor.id||proxy.adminProof!==env.hash(r.adminToken)||proxy.expires<=t)King.fail('대리 인증이 만료되었습니다.');return {actor,account:s.accounts[proxy.targetId],admin:true,proxy:true};}
