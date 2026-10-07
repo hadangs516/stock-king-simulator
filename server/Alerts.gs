@@ -20,3 +20,5 @@ King.setPriceAlert = function(s,a,r,t,env) {
   var price=King.int(r.price,1,1000000000);if(a.priceAlerts.filter(function(v){return !v.triggered;}).length>=20)King.fail('활성 목표가는 최대 20개입니다.');
   a.priceAlerts=a.priceAlerts.filter(function(v){return !v.triggered;});var rule={id:env.id(),symbol:r.symbol,direction:r.direction,price,at:t};a.priceAlerts.push(rule);return {priceAlert:rule};
 };
+
+King.notificationSettings=function(a){var old=a.settings.notifications||{},next={};['risk','orders','targets'].forEach(function(k){next[k]=old[k]!==false;});a.settings.notifications=next;return next;};

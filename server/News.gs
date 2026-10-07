@@ -1,7 +1,7 @@
 var King = typeof King === 'undefined' ? {} : King;
 King.newsImage=function(sector){return ({반도체:'semiconductor',자동차:'automotive',에너지:'energy',바이오:'biotech',디지털:'digital',소비재:'consumer'})[sector]||'economy';};
 King.publicNews=function(n,day){
-  var out={id:n.id,symbol:n.symbol||null,sector:n.sector||'경제',category:n.category||'공시',title:n.title,fact:n.fact,at:n.at,time:n.time,image:n.image||King.newsImage(n.sector),body:Array.isArray(n.body)?n.body:[n.fact]};
+  var out={id:n.id,symbol:n.symbol||null,sector:n.sector||'경제',category:n.category||'공시',title:n.title,fact:n.fact,at:n.at,time:n.time,image:King.newsImageFor(n),body:Array.isArray(n.body)?n.body:[n.fact]};
   if(day<5&&n.beginner)out.beginner=n.beginner;return out;
 };
 King.editorialNews=function(s,recipe,x,t,env,seedOnly){
@@ -12,7 +12,7 @@ King.editorialNews=function(s,recipe,x,t,env,seedOnly){
   var fill=function(text){return text.replace(/\{(\w+)\}/g,function(_,key){return String(data[key]);});},body=recipe.body.map(fill),id=(seedOnly?'intro-v2-':'event-')+env.hash(t+':'+recipe.id+':'+(x?x.id:'market')).slice(0,24);
   if(s.market.news.some(function(n){return n.id===id;}))return;
   var n={id,symbol:x?x.id:null,sector:x?x.sector:'경제',category:recipe.category,title:fill(recipe.title),fact:body[0],body,beginner:recipe.beginner,image:recipe.image,at:t,time:King.stamp(t),impact:seedOnly?0:recipe.impact};
-  s.market.news.push(n);if(!seedOnly&&x)x.trend=Math.max(-12,Math.min(12,(x.trend||0)+recipe.impact));
+  n.image=King.newsImageFor(n,recipe.id);s.market.news.push(n);if(!seedOnly&&x)x.trend=Math.max(-12,Math.min(12,(x.trend||0)+recipe.impact));
   if(King.alertNews)King.alertNews(s,n,t);
 };
 King.seedNews=function(s,t,env){

@@ -3,7 +3,8 @@ const topics={반도체:'semiconductor',자동차:'automotive',바이오:'biotec
 const images=new Set([...Object.values(topics),'economy']);
 export const newsCategories=['전체','시장뉴스','기업뉴스','공시','이벤트'];
 export function newsCategory(n){return newsCategories.slice(1).includes(n.category)?n.category:n.symbol?'기업뉴스':'시장뉴스';}
-export function newsImageUrl(n){
+export function newsImageUrl(n,thumbnail=false){
+ if(/^NEWS-(0[0-9][1-9]|0[1-9]0|100)$/.test(n.image||''))return `./assets/news/${n.image}${thumbnail?'-thumb':''}.webp`;
  const topic=images.has(n.image)?n.image:topics[n.sector]||'economy';
  return `./assets/news/${topic}.png`;
 }

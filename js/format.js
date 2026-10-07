@@ -17,19 +17,20 @@ export function candleData(points, interval=300000) {
   const buckets=new Map();
   for(const [at,price] of [...(points||[])].sort((a,b)=>a[0]-b[0])){
     if(!Number.isFinite(at)||!Number.isFinite(price))continue;
-    const time=Math.floor(at/interval)*interval,bar=buckets.get(time);
+    const offset=interval===86400000?32400000:0,time=Math.floor((at+offset)/interval)*interval-offset,bar=buckets.get(time);
     if(bar){bar.high=Math.max(bar.high,price);bar.low=Math.min(bar.low,price);bar.close=price;bar.samples++;}
     else buckets.set(time,{time,open:price,high:price,low:price,close:price,samples:1});
   }
   return [...buckets.values()];
 }
-export function candles(points, markers=[]) {
-  const bars=candleData(points).slice(-48);
+export function candles(points, markers=[], interval=300000, suppliedBars) {
+  const intervalLabel=interval===86400000?'일':interval===3600000?'1시간':'5분';
+  const bars=(suppliedBars||candleData(points,interval)).slice(-48);
   if(!bars.length)return '<p class="empty">시세를 기다리고 있어요.</p>';
   const low=Math.min(...bars.map(b=>b.low)),high=Math.max(...bars.map(b=>b.high)),pad=Math.max((high-low)*.12,1),lo=low-pad,hi=high+pad;
   const y=v=>20+(hi-v)/(hi-lo)*170,step=320/Math.max(bars.length,12),width=Math.max(2,Math.min(13,step*.65));
-  const visible=markers.filter(m=>m.at>=bars[0].time&&m.at<bars.at(-1).time+300000);
-  return `<figure class="chart candle-chart"><svg viewBox="0 0 380 225" role="img" aria-label="5분 봉차트. 최저 ${money(low)}, 최고 ${money(high)}"><path class="gridline" d="M10 20H330M10 105H330M10 190H330"/>${bars.map((b,i)=>{const cx=16+i*step,color=b.close>b.open?'#e13d48':b.close<b.open?'#2166db':'#718096';return `<g tabindex="0" aria-label="${stamp(b.time)} 시가 ${money(b.open)}, 고가 ${money(b.high)}, 저가 ${money(b.low)}, 종가 ${money(b.close)}"><title>${stamp(b.time)}\n시가 ${money(b.open)} / 고가 ${money(b.high)}\n저가 ${money(b.low)} / 종가 ${money(b.close)}</title><line x1="${cx}" x2="${cx}" y1="${y(b.high)}" y2="${y(b.low)}" stroke="${color}" stroke-width="1.5"/><rect x="${cx-width/2}" y="${Math.min(y(b.open),y(b.close))}" width="${width}" height="${Math.max(1.5,Math.abs(y(b.open)-y(b.close)))}" fill="${color}"/></g>`;}).join('')}<text x="335" y="24">${Math.round(hi).toLocaleString()}</text><text x="335" y="109">${Math.round((hi+lo)/2).toLocaleString()}</text><text x="335" y="194">${Math.round(lo).toLocaleString()}</text><text x="10" y="218">${stamp(bars[0].time).slice(11)}</text><text x="290" y="218">${stamp(bars.at(-1).time).slice(11)}</text></svg><figcaption><span><i class="up">■</i> 상승 <i class="down">■</i> 하락</span><span>5분봉 · 원</span></figcaption></figure>${visible.length?`<div class="markers">${visible.slice(-12).map(m=>`<button type="button" class="link-button" data-action="${m.kind==='news'?'chartNews':'receipt'}" data-id="${escape(m.id)}">${escape(m.label)} · ${stamp(m.at).slice(11)}</button>`).join('')}</div>`:''}`;
+  const visible=markers.filter(m=>m.at>=bars[0].time&&m.at<bars.at(-1).time+interval);
+  return `<figure class="chart candle-chart"><svg viewBox="0 0 380 225" role="img" aria-label="${intervalLabel} 봉차트. 최저 ${money(low)}, 최고 ${money(high)}"><path class="gridline" d="M10 20H330M10 105H330M10 190H330"/>${bars.map((b,i)=>{const cx=16+i*step,color=b.close>b.open?'#e13d48':b.close<b.open?'#2166db':'#718096';return `<g tabindex="0" aria-label="${stamp(b.time)} 시가 ${money(b.open)}, 고가 ${money(b.high)}, 저가 ${money(b.low)}, 종가 ${money(b.close)}"><title>${stamp(b.time)}\n시가 ${money(b.open)} / 고가 ${money(b.high)}\n저가 ${money(b.low)} / 종가 ${money(b.close)}</title><line x1="${cx}" x2="${cx}" y1="${y(b.high)}" y2="${y(b.low)}" stroke="${color}" stroke-width="1.5"/><rect x="${cx-width/2}" y="${Math.min(y(b.open),y(b.close))}" width="${width}" height="${Math.max(1.5,Math.abs(y(b.open)-y(b.close)))}" fill="${color}"/></g>`;}).join('')}<text x="335" y="24">${Math.round(hi).toLocaleString()}</text><text x="335" y="109">${Math.round((hi+lo)/2).toLocaleString()}</text><text x="335" y="194">${Math.round(lo).toLocaleString()}</text><text x="10" y="218">${interval>=3600000?stamp(bars[0].time).slice(5,10):stamp(bars[0].time).slice(11)}</text><text x="290" y="218">${interval>=3600000?stamp(bars.at(-1).time).slice(5,10):stamp(bars.at(-1).time).slice(11)}</text></svg><figcaption><span><i class="up">■</i> 상승 <i class="down">■</i> 하락</span><span>${intervalLabel}봉 · 원</span></figcaption></figure><p class="footnote">저장된 시세 표본 기준입니다. 일부 구간과 오래된 기록은 전체 시세를 포함하지 않을 수 있습니다.</p>${visible.length?`<div class="markers">${visible.slice(-12).map(m=>`<button type="button" class="link-button" data-action="${m.kind==='news'?'chartNews':'receipt'}" data-id="${escape(m.id)}">${escape(m.label)} · ${stamp(m.at).slice(11)}</button>`).join('')}</div>`:''}`;
 }
 export function chart(points, label = '가격 흐름', markers = []) {
   if (!points?.length) return '<div class="empty">아직 기록이 없습니다.</div>';
