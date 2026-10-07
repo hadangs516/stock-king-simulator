@@ -12,3 +12,8 @@ test('client accepts only the supplied 100 ids and separates thumbnails from art
  assert.equal(newsImageUrl({image:'NEWS-001'},true),'./assets/news/NEWS-001-thumb.webp');
  for(const image of ['NEWS-000','NEWS-101','../private','NEWS-001/../../x'])assert.equal(newsImageUrl({image}),'./assets/news/economy.png');
 });
+test('new articles rotate valid scene candidates while published selections remain stable',()=>{
+ const h=harness(),recent=[];
+ for(let i=0;i<6;i++){const n={id:'rotation-'+i,title:'설비 점검',sector:'반도체'};n.image=h.K.newsImageFor(n,'equipment-maintenance',recent);if(recent.length)assert.notEqual(n.image,recent.at(-1).image);assert.ok(['NEWS-004','NEWS-005'].includes(n.image));recent.push(n);assert.equal(h.K.newsImageFor(n,'equipment-maintenance',recent),n.image);}
+ assert.equal(h.K.newsImageFor({id:'rate-only',title:'금리'},'market-rate',[{image:'NEWS-072'}]),'NEWS-072');
+});

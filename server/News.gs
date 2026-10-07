@@ -12,7 +12,7 @@ King.editorialNews=function(s,recipe,x,t,env,seedOnly){
   var fill=function(text){return text.replace(/\{(\w+)\}/g,function(_,key){return String(data[key]);});},body=recipe.body.map(fill),id=(seedOnly?'intro-v2-':'event-')+env.hash(t+':'+recipe.id+':'+(x?x.id:'market')).slice(0,24);
   if(s.market.news.some(function(n){return n.id===id;}))return;
   var n={id,symbol:x?x.id:null,sector:x?x.sector:'경제',category:recipe.category,title:fill(recipe.title),fact:body[0],body,beginner:recipe.beginner,image:recipe.image,at:t,time:King.stamp(t),impact:seedOnly?0:recipe.impact};
-  n.image=King.newsImageFor(n,recipe.id);s.market.news.push(n);if(!seedOnly&&x)x.trend=Math.max(-12,Math.min(12,(x.trend||0)+recipe.impact));
+  n.image=King.newsImageFor(n,recipe.id,s.market.news);s.market.news.push(n);if(!seedOnly&&x)x.trend=Math.max(-12,Math.min(12,(x.trend||0)+recipe.impact));
   if(King.alertNews)King.alertNews(s,n,t);
 };
 King.seedNews=function(s,t,env){
