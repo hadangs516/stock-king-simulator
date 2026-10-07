@@ -5,7 +5,7 @@ King.ensureProgression = function(a) {
   if(!Number.isSafeInteger(a.tutorialStep))a.tutorialStep=a.tutorial?8:0;
   if(!Number.isSafeInteger(a.contributedCash))a.contributedCash=a.startingCash||10000000;
 };
-King.attendanceAmount = function(day,first) {return first?1000000:day===30?3000000:day%7===0?500000:100000;};
+King.attendanceAmount = function(day,first) {day=(day-1)%30+1;return first?1000000:day===30?3000000:day%7===0?500000:100000;};
 King.attendanceView = function(a,t) {
   var v=a.attendance,today=King.date(t),gap=v.lastDate?(Date.parse(today)-Date.parse(v.lastDate))/King.DAY:null;
   var claimed=gap===0,next=claimed?v.streak:gap===1?v.streak+1:1;
@@ -27,5 +27,5 @@ King.awardXp = function(a,kind,t) {
   var rules={attendance:[20,1],news:[5,5],explore:[5,3],trade:[10,3],time:[10,3],achievement:[10,5]},rule=rules[kind];if(!rule)return;
   if(!a.xpDaily||a.xpDaily.date!==King.date(t))a.xpDaily={date:King.date(t),total:0,counts:{}};
   var daily=a.xpDaily,count=daily.counts[kind]||0;if(count>=rule[1]||daily.total>=100)return;
-  var amount=Math.min(rule[0],100-daily.total);daily.counts[kind]=count+1;daily.total+=amount;a.xp=(a.xp||0)+amount;
+  var previousLevel=King.levelInfo(a.xp||0).level,amount=Math.min(rule[0],100-daily.total);daily.counts[kind]=count+1;daily.total+=amount;a.xp=(a.xp||0)+amount;var level=King.levelInfo(a.xp).level;if(level>previousLevel)King.addAlert(a,'level-'+a.runId+'-'+level,'level','레벨 상승','Lv. '+level+'이 되었습니다.',t);
 };

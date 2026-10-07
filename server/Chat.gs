@@ -29,7 +29,7 @@ King.chats=function(s,a,r,t,env,auth){
   var target=King.chatAuthorize(s,a,auth,r),admin=r.action.indexOf('admin')===0;
   if(r.action==='friendMessages'||r.action==='friendSend'){
     var rows=Object.values(s.friendMessages).filter(function(v){return v.from===a.id&&v.to===target.id||v.from===target.id&&v.to===a.id;});
-    if(r.action==='friendSend'){var id=env.id();s.friendMessages[id]={id,from:a.id,to:target.id,body:King.chatBody(a,r,t),at:t};return {sent:id};}
+    if(r.action==='friendSend'){var id=env.id();s.friendMessages[id]={id,from:a.id,to:target.id,body:King.chatBody(a,r,t),at:t};King.addAlert(target,id,'friendMessage','친구 새 메시지','친구 대화에서 확인해 주세요.',t);return {sent:id};}
     return King.chatPage(rows,r,function(v){return v.from===a.id;});
   }
   if(r.action==='supportList'||r.action==='adminSupportList')return {conversations:Object.values(s.conversations).filter(function(c){return admin||c.accountId===a.id;}).map(function(c){return King.supportSummary(s,c,admin);}).sort(function(x,y){return y.at-x.at;})};
@@ -43,7 +43,7 @@ King.chats=function(s,a,r,t,env,auth){
   var c=target;
   if(r.action==='supportSend'||r.action==='adminSupportSend'){
     if(c.messages.length>=2000)King.fail('새 문의 대화를 시작해 주세요.');
-    var message={id:env.id(),role:admin?'admin':'player',body:King.chatBody(a,r,t),at:t};c.messages.push(message);
+    var message={id:env.id(),role:admin?'admin':'player',body:King.chatBody(a,r,t),at:t};c.messages.push(message);if(admin)King.addAlert(s.accounts[c.accountId],message.id,'supportReply','고객센터 새 답변','고객센터에서 답변을 확인해 주세요.',t);
     c[admin?'adminRead':'playerRead']=c.messages.length;return {sent:message.id};
   }
   if(r.action==='supportRead'||r.action==='adminSupportRead'){

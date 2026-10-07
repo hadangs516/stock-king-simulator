@@ -31,9 +31,9 @@ test('one unfillable reservation fails without blocking another account or mutat
 test('target alerts fire once, stay account private, and reset with the run',()=>{
  const h=harness(),r=signup(h),other=signup(h,'다른투자자'),auth={token:r.token,runId:r.snapshot.account.runId};
  h.call('priceAlert',{...auth,requestId:'target-001',symbol:'005930',direction:'above',price:1});h.advance(60000);
- let snap=h.call('sync',auth).snapshot;assert.equal(snap.alerts.filter(n=>n.kind==='targets').length,1);
- h.advance(60000);snap=h.call('sync',auth).snapshot;assert.equal(snap.alerts.filter(n=>n.kind==='targets').length,1);
- assert.equal(h.call('sync',{token:other.token}).snapshot.alerts.length,0);
+ let snap=h.call('sync',auth).snapshot;assert.equal(snap.alerts.filter(n=>n.kind==='targetAbove').length,1);
+ h.advance(60000);snap=h.call('sync',auth).snapshot;assert.equal(snap.alerts.filter(n=>n.kind==='targetAbove').length,1);
+ assert.equal(h.call('sync',{token:other.token}).snapshot.alerts.filter(n=>n.kind==='targetAbove').length,0);
  assert.equal(h.call('reset',{...auth,requestId:'target-reset',pin:'0123',confirm:true}).snapshot.priceAlerts.length,0);
 });
 test('corporate controls validate listing, financials, dividends and preserve source news in audits',()=>{

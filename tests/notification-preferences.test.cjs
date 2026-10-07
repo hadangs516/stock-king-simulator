@@ -2,11 +2,11 @@ const {test}=require('node:test'),assert=require('node:assert/strict');const {ha
 
 test('notification defaults are all on, legacy choices survive and obsolete limits disappear',()=>{
  const h=harness(),r=signup(h),a=h.s.accounts[r.snapshot.account.id];
- assert.deepEqual(JSON.parse(JSON.stringify(r.snapshot.account.settings.notifications)),{risk:true,orders:true,targets:true});
+ assert.equal(Object.keys(r.snapshot.account.settings.notifications).length,26);assert.ok(Object.values(r.snapshot.account.settings.notifications).every(Boolean));
  a.settings.notifications={risk:false,orders:true,targets:true,start:7,end:24,limit:2};
- const s=h.call('sync',{token:r.token}).snapshot;assert.equal(s.account.settings.notifications.risk,false);assert.equal('start' in s.account.settings.notifications,false);
- const changed=h.call('settings',{token:r.token,runId:a.runId,requestId:'notify-pref-test',settings:{notifications:{orders:false}}});
- assert.equal(changed.snapshot.account.settings.notifications.orders,false);assert.equal(changed.snapshot.account.settings.notifications.targets,true);
+ const s=h.call('sync',{token:r.token}).snapshot;assert.equal(s.account.settings.notifications.halt,false);assert.equal('start' in s.account.settings.notifications,false);
+ const changed=h.call('settings',{token:r.token,runId:a.runId,requestId:'notify-pref-test',settings:{notifications:{buyFilled:false}}});
+ assert.equal(changed.snapshot.account.settings.notifications.buyFilled,false);assert.equal(changed.snapshot.account.settings.notifications.targetAbove,true);
  h.K.addAlert(h.s.accounts[a.id],'muted-order','orders','예약 체결','기록',h.now);h.K.addAlert(h.s.accounts[a.id],'target','targets','목표가','기록',h.now);
  const refreshed=h.call('sync',{token:r.token}).snapshot;assert.equal(refreshed.alerts.some(n=>n.id==='muted-order'),false);assert.equal(refreshed.alerts.some(n=>n.id==='target'),true);
 });

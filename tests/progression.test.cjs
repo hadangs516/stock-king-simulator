@@ -13,9 +13,9 @@ test('new account starts at zero; first attendance is one million exactly once e
 });
 test('weekly and day 30 rewards replace ordinary rewards, missed days restart at one hundred thousand',()=>{
  const {h,r,auth}=start();claim(h,auth,'first');
- for(let day=2;day<=35;day++){tomorrow(h);const paid=claim(h,auth,String(day));assert.equal(paid.amount,day===30?3000000:day%7===0?500000:100000,'day '+day);}
+ for(let day=2;day<=61;day++){tomorrow(h);const paid=claim(h,auth,String(day));assert.equal(paid.amount,(day-1)%30+1===30?3000000:((day-1)%30+1)%7===0?500000:100000,'day '+day);}
  tomorrow(h,2);const restart=claim(h,auth,'restart');assert.equal(restart.amount,100000);assert.equal(restart.snapshot.attendance.streak,1);
- assert.equal(h.s.accounts[r.snapshot.account.id].attendance.history.length,36);
+ assert.equal(h.s.accounts[r.snapshot.account.id].attendance.history.length,62);
 });
 test('legacy migration preserves balance and never reissues the initial gift',()=>{
  const {h,r,auth}=start(),a=h.s.accounts[r.snapshot.account.id];delete a.attendance;delete a.xp;a.cash=7654321;a.startingCash=1000000;

@@ -27,3 +27,15 @@ test('support has multiple private conversations and requires strengthened admin
  const read=call(a,'supportRead',{conversationId:first.conversation.id});assert.equal(read.messages.length,2);assert.equal(read.messages[1].role,'admin');assert.equal(call(a,'supportList').conversations.find(c=>c.id===first.conversation.id).unread,0);
  call(a,'reset',{pin:'0123',confirm:true});assert.equal(Object.keys(h.s.conversations).length,0);
 });
+test('social alerts reach only the recipient and contain no private message body',()=>{
+ const f=setup(),{h,a,b,c,call,aid,bid,admin}=f;
+ call(a,'friendRequest',{friendId:bid});assert.ok(call(b,'sync').snapshot.alerts.some(n=>n.kind==='friendRequest'));
+ call(b,'friendRespond',{friendId:aid,accept:true});assert.ok(call(a,'sync').snapshot.alerts.some(n=>n.kind==='friendAccepted'));
+ call(a,'friendSend',{friendId:bid,body:'비공개본문'});const alerts=call(b,'sync').snapshot.alerts;assert.ok(alerts.some(n=>n.kind==='friendMessage'));assert.ok(!JSON.stringify(alerts).includes('비공개본문'));
+ assert.ok(!call(c,'sync').snapshot.alerts.some(n=>n.kind==='friendMessage'));
+ const conversation=call(a,'supportCreate',{category:'기타',body:'문의'}).conversation;
+ const proof=call(admin,'adminUnlock',{secret:'test-only-admin'}).adminToken;
+ call(admin,'adminSupportSend',{adminToken:proof,conversationId:conversation.id,body:'답변'});
+ assert.ok(call(a,'sync').snapshot.alerts.some(n=>n.kind==='supportReply'));
+ assert.ok(!h.K.notificationFeed(h.s,h.s.accounts[a.snapshot.account.id],h.now,true).some(n=>n.kind==='supportReply'));
+});

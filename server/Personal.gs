@@ -3,8 +3,8 @@ King.backupData = function(a) {return {schema:1,accountId:a.id,runId:a.runId,ver
 King.personal = function(s,a,r,t,env,auth) {
   if(r.action==='readAlerts'){
     if(!Array.isArray(r.ids)||r.ids.length>500||r.ids.some(function(id){return typeof id!=='string';}))King.fail('알림을 확인해 주세요.');
-    var allowed=(a.alerts||[]).map(function(n){return n.id;}).concat(Object.values(s.announcements).filter(function(n){return n.status==='게시'&&(n.targets==='all'||n.targets.indexOf(a.id)>=0);}).map(function(n){return n.id;}));
-    a.readAlerts=Array.from(new Set((a.readAlerts||[]).concat(r.ids.filter(function(id){return allowed.indexOf(id)>=0;})))).filter(function(id){return allowed.indexOf(id)>=0;});return {};
+    var allowed=King.notificationFeed(s,a,t,auth.proxy,true).map(function(n){return n.id;}),retained=King.notificationFeed(s,a,t,false,true).map(function(n){return n.id;});
+    a.readAlerts=Array.from(new Set((a.readAlerts||[]).concat(r.ids.filter(function(id){return allowed.indexOf(id)>=0;})))).filter(function(id){return retained.indexOf(id)>=0;});return {};
   }
   if(r.action==='attendance')return King.attend(s,a,t,env,auth);
   if(r.action==='tutorialProgress'){if(auth.proxy)King.fail('본인 계정에서 안내를 진행해 주세요.');var step=King.int(r.step,0,8);if(step>1&&!a.attendance.firstGranted)King.fail('첫 접속 보상을 먼저 받아 주세요.');if(step>a.tutorialStep+1)King.fail('안내를 순서대로 확인해 주세요.');a.tutorialStep=Math.max(a.tutorialStep,step);return {};}
@@ -24,7 +24,7 @@ King.personal = function(s,a,r,t,env,auth) {
     var input=r.settings||{};['terms','animation'].forEach(function(k){if(k in input){if(typeof input[k]!=='boolean')King.fail('설정을 확인해 주세요.');a.settings[k]=input[k];}});
     ['bgm','sfx'].forEach(function(k){if(k in input){if(typeof input[k]!=='number'||input[k]<0||input[k]>1)King.fail('음량 범위를 확인해 주세요.');a.settings[k]=input[k];}});
     if(input.favorites){if(!Array.isArray(input.favorites)||input.favorites.length>100||input.favorites.some(function(id){return !s.market.stocks[id];}))King.fail('관심종목을 확인해 주세요.');a.settings.favorites=Array.from(new Set(input.favorites));}
-    if(input.notifications){var n=input.notifications,current=King.notificationSettings(a);['risk','orders','targets'].forEach(function(k){if(k in n){if(typeof n[k]!=='boolean')King.fail('알림 설정을 확인해 주세요.');current[k]=n[k];}});}
+    if(input.notifications){var n=input.notifications,current=King.notificationSettings(a);King.notificationOptions.map(function(o){return o.id;}).forEach(function(k){if(k in n){if(typeof n[k]!=='boolean')King.fail('알림 설정을 확인해 주세요.');current[k]=n[k];}});}
     if(!auth.proxy)King.log(s,a,'설정 변경',{items:Object.keys(input).filter(function(k){return ['terms','animation','bgm','sfx','favorites','notifications'].indexOf(k)>=0;})},t,env);return {savedAt:t};
   }
   if(r.action==='save'){King.log(s,a,'수동 저장',{},t,env);return {savedAt:t};}

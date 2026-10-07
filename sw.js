@@ -1,4 +1,4 @@
-const CACHE='stock-king-v0.1.7-news100-20261007';
+const CACHE='stock-king-v0.1.8-notifications-20261008';
 const ASSETS=['./','./index.html','./styles.css','./game-theme.css','./assets/ui/header.webp','./assets/favicon.png','./js/config.js','./js/api.js','./js/format.js','./js/game-panels.js','./js/views.js','./js/app.js','./js/admin-ui.js','./js/platform.js','./js/friends-ui.js','./js/chat-ui.js','./js/optimistic.js','./js/preferences.js','./js/motion.js','./js/progression-ui.js','./js/news-content.js','./js/companies.js','./manifest.webmanifest','./assets/icon.svg','./assets/icon-192.png','./assets/icon-512.png'];
 self.addEventListener('install',event=>event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(ASSETS))));
 self.addEventListener('activate',event=>event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k.startsWith('stock-king-')&&k!==CACHE).map(k=>caches.delete(k))))));

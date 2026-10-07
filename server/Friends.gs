@@ -55,11 +55,11 @@ King.friends = function(s,a,r,t,env,auth) {
     if(r.action==='friendRequest'){
       if(link)King.fail('이미 친구이거나 요청이 진행 중입니다.');
       if([a.id,other.id].some(function(id){return Object.values(s.friendships).filter(function(v){return v.from===id||v.to===id;}).length>=100;}))King.fail('친구 및 대기 요청은 최대 100개입니다.');
-      s.friendships[key]={from:a.id,to:other.id,status:'pending',at:t};King.log(s,a,'친구 요청',{nickname:other.social.nickname},t,env);
+      s.friendships[key]={from:a.id,to:other.id,status:'pending',at:t};King.addAlert(other,env.id(),'friendRequest','친구 요청 도착','친구 메뉴에서 받은 요청을 확인해 주세요.',t);King.log(s,a,'친구 요청',{nickname:other.social.nickname},t,env);
     }
     if(r.action==='friendRespond'){
       if(!link||link.status!=='pending'||link.to!==a.id)King.fail('받은 친구 요청이 없습니다.');
-      if(r.accept===true){link.status='accepted';link.accepted=t;}else delete s.friendships[key];
+      if(r.accept===true){link.status='accepted';link.accepted=t;King.addAlert(other,env.id(),'friendAccepted','친구 요청 수락','친구 메뉴에서 확인해 주세요.',t);}else delete s.friendships[key];
       King.log(s,a,r.accept===true?'친구 수락':'친구 거절',{nickname:other.social.nickname},t,env);
     }
     if(r.action==='friendRemove'){if(link){delete s.friendships[key];King.log(s,a,'친구 삭제·요청 취소',{nickname:other.social.nickname},t,env);}}
