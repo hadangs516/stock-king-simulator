@@ -25,7 +25,7 @@ test('news preserves authored facts, escapes articles and reuses topic pictures 
  const h=harness(),s=signup(h).snapshot;
  for(const n of s.news){assert.ok(newsParagraphs(n,1).length>=10);assert.deepEqual(newsParagraphs(n,7).slice(0,10),newsParagraphs(n,1).slice(0,10));}
  const n={id:'article',title:'삼성전자 사업 환경 변화',fact:'반도체 가상 수요 지표가 -3% 변했습니다.',at:h.now,sector:'반도체',impact:-3};
- const cards=news(s,[n]);assert.match(cards,/newsArticle/);assert.ok(!cards.includes(n.fact));assert.equal(newsTitle(n),n.title);
+ const cards=news(s,[n]);assert.match(cards,/newsArticle/);assert.ok(cards.includes(n.fact));assert.equal(newsTitle(n),n.title);
  assert.deepEqual(newsParagraphs(n),[n.fact]);
  const {newsImageUrl}=await import('../js/news-content.js');const fs=require('node:fs'),path=require('node:path');
  assert.equal(newsImageUrl(n),'./assets/news/semiconductor.png');
