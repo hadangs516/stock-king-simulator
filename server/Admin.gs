@@ -10,7 +10,7 @@ King.admin = function(s,a,auth,r,env) {
   }
   if(!auth.admin||auth.proxy)King.fail('관리자 인증이 필요합니다.');
   if(r.action==='adminOverview'){
-    var filter=King.text(r.search||'',30),offset=King.int(r.offset||0,0,10000000),players=Object.values(s.accounts).filter(function(u){return u.name.indexOf(filter)>=0;}).map(function(u){var v=King.snapshot(s,u,t);return {id:u.id,name:u.name,cash:u.cash,total:v.total,joined:u.joined,lastLogin:u.lastLogin,lastSeen:u.lastSeen,logins:u.logins,lifetimeSeconds:u.lifetimeSeconds,restricted:u.restricted||null};});
+    var filter=King.text(r.search||'',30),offset=King.int(r.offset||0,0,10000000),players=Object.values(s.accounts).filter(function(u){return u.name.indexOf(filter)>=0;}).map(function(u){var total=King.totalAssets(s,u);return {id:u.id,name:u.name,cash:u.cash,total:total,joined:u.joined,lastLogin:u.lastLogin,lastSeen:u.lastSeen,logins:u.logins,lifetimeSeconds:u.lifetimeSeconds,restricted:u.restricted||null};});
     var sort=['name','cash','total','lastSeen','joined','lifetimeSeconds'].indexOf(r.sort)>=0?r.sort:'name';players.sort(function(a,b){return sort==='name'?a.name.localeCompare(b.name):b[sort]-a[sort];});
     return {players:players.slice(offset,offset+30),next:offset+30<players.length?offset+30:null,count:Object.keys(s.accounts).length,filteredCount:players.length,marketTime:s.market.minute*60000,active:Object.values(s.accounts).filter(function(p){return p.lastSeen>t-300000;}).length,receiptCount:Object.keys(s.receipts).length,reports:Object.values(s.reports).slice(-100).reverse(),notices:Object.values(s.announcements).slice(-100).reverse(),audits:Object.values(s.audits).slice(-100).reverse(),maintenance:s.maintenance,health:env.health?env.health():null};
   }

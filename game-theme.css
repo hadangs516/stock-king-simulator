@@ -44,3 +44,24 @@ dialog{color:#182b1e;background:#fffdf0;border:2px solid #d2b243;border-radius:2
 #header .brand{aspect-ratio:941/245;overflow:hidden;isolation:isolate}
 #header .brand-art{width:100%;height:100%;object-fit:contain;position:static;transform:none}
 .auth-art{aspect-ratio:941/245;object-fit:contain}
+
+/* Mobile readability and touch targets, preserving the reference artwork and banner. */
+.phone{padding-bottom:calc(88px + env(safe-area-inset-bottom))}
+input:not([type=checkbox]):not([type=range]),select,textarea,#search,.market-filters select{font-size:16px;min-height:44px}
+.tabs button,.news-categories button,.detail-orders button,.notice .row button,.settings-content button,.order-buttons button,.reward-row>button,.section-title .link-button,.detail-favorite,.back{min-height:44px}
+.tabs button,.news-categories button{min-width:44px}.news-categories button{font-size:12px;flex-shrink:0;padding-inline:10px}
+.stock .favorite{min-width:44px;min-height:48px}.stock-open{min-height:62px}.stock-main{grid-template-columns:30px minmax(0,1fr) 74px}.stock-open{grid-template-columns:minmax(0,1fr) 23%}
+.stock h3{font-size:13px;line-height:1.35}.stock-price strong{font-size:13px}.stock-price p{font-size:11px}.stock-name small{font-size:10px}
+.market-filters{grid-template-columns:minmax(0,1fr) minmax(0,1fr) 44px}.market-filters button,.market-filters .check{min-height:44px}.market-filters .check input{flex-shrink:0}
+.portfolio-graph .tabs{margin-bottom:5px}.portfolio-graph .tabs button,.detail-chart .tabs button{min-height:36px;font-size:11px;min-width:0}.portfolio-message{font-size:11px}.portfolio-note{font-size:9px}
+.news-preview{gap:7px;padding:8px}.news-preview strong{font-size:13px;line-height:1.45}.news-excerpt{font-size:11px;line-height:1.5}.news-preview time,.news-stock small{font-size:10px}.news-article>p{font-size:15px;line-height:1.8}.news-article time{font-size:12px}
+.news-stock{width:70px}.news-stock b{font-size:11px}.news-stock .mini-candles{height:32px}
+.holding-row{min-height:58px;font-size:11px}.holding-company strong{font-size:11px;overflow-wrap:anywhere}.holding-row small,.holding-labels{font-size:10px}.holding-company .company-logo{flex-shrink:0}
+.settings-block small{font-size:11px}.settings-block strong{font-size:16px}.settings-screen summary{min-height:44px}.sound-controls label{font-size:12px;gap:5px}.sound-controls input{min-height:44px}.sound-controls output,.sound-controls small{font-size:11px}.sound-controls{margin-left:0;margin-top:8px}
+.notice h3{font-size:14px}.notice p{font-size:12px;line-height:1.55}.notice-content>small{font-size:10px}.notice-content .row button{font-size:11px;min-height:40px}.order-values{font-size:11px}.order-values b{font-size:12px}.order-title h3{font-size:14px}.reward-copy h3{font-size:14px}.reward-copy small{font-size:10px}
+#ticker{grid-template-columns:minmax(0,1fr) minmax(0,1fr) 54px 44px}#ticker>button{min-height:44px}#ticker small{font-size:10px}#ticker strong{font-size:12px}#ticker .day strong{font-size:19px}.ticker-badge{top:1px;right:3px}
+#nav button{min-height:52px;font-size:12px}dialog{max-height:calc(100dvh - 24px);overflow-y:auto;overscroll-behavior:contain}dialog input,dialog textarea,dialog select{scroll-margin-block:24px}
+@media(max-width:350px){.stock-main{grid-template-columns:25px minmax(0,1fr) 69px;gap:3px}.stock-open{grid-template-columns:minmax(0,1fr) 19%}.stock h3{font-size:12px}.stock-price strong{font-size:12px}.stock-name small{font-size:9px}.stock .company-logo{width:25px}.news-preview .news-picture{width:46px;height:54px}.news-stock{width:57px}.news-stock b{font-size:10px}.holding-row{font-size:10px}.holding-company strong{font-size:10px}.holding-row small{font-size:9px}.settings-block strong{font-size:15px}.install-banner strong{font-size:12px}#ticker{grid-template-columns:minmax(0,1fr) minmax(0,1fr) 44px 44px}#ticker strong{font-size:11px}#ticker .day img{display:none}}
+@media(max-height:500px) and (orientation:landscape){header{position:relative}}
+#main[data-page=assets] .portfolio-total{font-size:clamp(16px,4.8vw,24px)}
+.asset-donut>div{width:72%;height:72%}.asset-donut strong{font-size:8px;letter-spacing:-.25px}

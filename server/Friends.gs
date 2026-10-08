@@ -28,7 +28,7 @@ King.friends = function(s,a,r,t,env,auth) {
     var metric=r.metric;if(['roi','total','level','playTime'].indexOf(metric)<0)King.fail('순위 기준을 선택해 주세요.');
     var rows=accounts.filter(function(x){var link=King.friendLink(s,a,x);return x.id===a.id||link&&link.status==='accepted';}).map(function(x){
       King.ensureProgression(x);var p=King.friendIdentity(x,env),self=x.id===a.id,shared=self?null:King.friendView(s,a,x,t,env).shared,value=null;
-      if(self){var total=King.snapshot(s,x,t).total;value=metric==='total'?total:metric==='roi'?(x.contributedCash>0?(total-x.contributedCash)/x.contributedCash*100:null):metric==='level'?King.levelInfo(x.xp):x.playSeconds;}
+      if(self){var total=King.totalAssets(s,x);value=metric==='total'?total:metric==='roi'?(x.contributedCash>0?(total-x.contributedCash)/x.contributedCash*100:null):metric==='level'?King.levelInfo(x.xp):x.playSeconds;}
       else if(metric in shared)value=shared[metric];
       return {friendId:p.id,nickname:p.nickname,self,value,rank:null};
     });

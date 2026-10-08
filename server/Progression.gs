@@ -18,7 +18,7 @@ King.attend = function(s,a,t,env,auth) {
   a.attendance.firstGranted=true;a.attendance.lastDate=King.date(t);a.attendance.streak=view.nextDay;
   a.attendance.history.push({date:King.date(t),day:view.nextDay,amount});a.attendance.history=a.attendance.history.slice(-90);
   King.awardXp(a,'attendance',t);King.log(s,a,'출석 보상',{day:view.nextDay,amount},t,env);
-  var point={at:t,date:King.date(t),total:King.snapshot(s,a,t).total},last=a.assetHistory[a.assetHistory.length-1];
+  var point={at:t,date:King.date(t),total:King.totalAssets(s,a)},last=a.assetHistory[a.assetHistory.length-1];
   if(last&&last.at===t)a.assetHistory[a.assetHistory.length-1]=point;else a.assetHistory.push(point);
   return {amount,attendanceDay:view.nextDay};
 };
