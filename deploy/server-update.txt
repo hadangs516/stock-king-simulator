@@ -1,0 +1,1057 @@
+// 주식왕 시뮬레이션 0.1.12 — 아래 전체 내용을 Apps Script Code.gs에 붙여넣으세요.
+
+// ===== AccountLifecycle.gs =====
+var King = typeof King === 'undefined' ? {} : King;
+King.clearAccountHistory = function(s,id) {
+  ['orders','claims','receipts','reports','records','quotes','conversations','sessions','adminSessions','requests'].forEach(function(table){
+    Object.keys(s[table]||{}).forEach(function(key){var value=s[table][key];if(value.accountId===id||table==='requests'&&key.indexOf(id+':')===0)delete s[table][key];});
+  });
+  ['friendships','friendMessages','proxies'].forEach(function(table){
+    Object.keys(s[table]||{}).forEach(function(key){var value=s[table][key];if([value.from,value.to,value.actorId,value.targetId].indexOf(id)>=0)delete s[table][key];});
+  });
+  Object.values(s.announcements).forEach(function(value){if(Array.isArray(value.targets))value.targets=value.targets.filter(function(target){return target!==id;});});
+  // Shared market prices remain intact; remove only the departing player's flow identity.
+  s.market.flows.forEach(function(flow){if(flow.accountId===id)flow.accountId='removed:'+flow.at;});
+  Object.values(s.audits).forEach(function(value){
+    if(value.actorId===id){delete value.actorId;value.actor='삭제된 계정';}
+    if(value.target===id||Array.isArray(value.target)&&value.target.indexOf(id)>=0){value.target=Array.isArray(value.target)?value.target.filter(function(target){return target!==id;}):'삭제된 계정';value.before={};value.after={};value.reason='개인 기록 삭제';}
+  });
+};
+King.accountLifecycle = function(s,a,r,t,env,auth) {
+  if(auth.proxy||r.pin!==a.pin)King.fail('본인 PIN을 확인해 주세요.');
+  if(r.confirm!==true)King.fail('삭제되는 내용을 확인하고 최종 확인을 선택해 주세요.');
+  King.clearAccountHistory(s,a.id);
+  if(r.action==='deleteAccount'){delete s.accounts[a.id];return {deleted:true,loginRequired:true};}
+  var next={id:a.id,name:a.name,pin:a.pin,settings:King.clone(a.settings),joined:t,logins:0,lifetimeSeconds:0,lastSeen:0,xp:0};
+  if(a.social)next.social={id:env.id(),nickname:a.social.nickname,sharing:King.clone(a.social.sharing)};
+  if(a.restricted)next.restricted=King.clone(a.restricted);
+  King.newRun(next,t,env);s.accounts[a.id]=next;
+  return {loginRequired:true,snapshot:King.snapshot(s,next,t,null,env)};
+};
+
+
+// ===== Accounts.gs =====
+var King = typeof King === 'undefined' ? {} : King;
+King.newRun = function(a,t,env) {a.runId=env.id();a.started=t;a.cash=0;a.startingCash=1000000;a.contributedCash=0;a.xp=0;a.xpDaily=null;a.tutorialStep=0;a.attendance={firstGranted:false,lastDate:null,streak:0,history:[]};a.holdings={};a.realized=0;a.playSeconds=0;a.tutorial=false;a.achievements={};a.statistics={companies:[],industries:[],dates:[],memos:0};a.readNews=[];a.readAlerts=[];a.assetHistory=[];a.alerts=[];a.priceAlerts=[];a.activityUntil=t;};
+King.login = function(s,r,env) {
+  var t=env.now();if(typeof r.name!=='string'||r.name.length>30)King.fail('아이디는 한글 2~12자로 입력해 주세요.');var name=r.name.normalize('NFC');
+  if(!/^[가-힣]{2,12}$/.test(name))King.fail('아이디는 한글 2~12자로 입력해 주세요.');
+  if(typeof r.pin!=='string'||!/^\d{4}$/.test(r.pin))King.fail('PIN은 숫자 4자리입니다.');
+  var a=Object.values(s.accounts).find(function(x){return x.name===name;});
+  if(r.action==='signup'){
+    if(s.maintenance.enabled)King.fail('점검 중: '+s.maintenance.reason);
+    if(a||Object.values(s.accounts).some(function(x){return x.social&&x.social.nickname.toLocaleLowerCase()===name.toLocaleLowerCase();}))King.fail('이미 사용 중인 아이디 또는 닉네임입니다.');if(r.consent!==true)King.fail('가상 투자 안내에 동의해 주세요.');
+    a={id:env.id(),name,pin:r.pin,joined:t,logins:0,lifetimeSeconds:0,settings:{terms:true,animation:true,bgm:0,sfx:.3,favorites:[],notifications:{risk:true,orders:true,targets:true}},lastSeen:0};King.newRun(a,t,env);s.accounts[a.id]=a;King.log(s,a,'회원가입',{},t,env);
+  }else if(!a||a.pin!==r.pin)King.fail('아이디 또는 PIN이 올바르지 않습니다.');
+  var isAdmin=env.isAdmin(name)&&env.adminCheck(r.adminSecret||'');
+  if(s.maintenance.enabled&&!isAdmin)King.fail('점검 중: '+s.maintenance.reason);
+  if(a.restricted&&(!a.restricted.until||a.restricted.until>t)&&!isAdmin)King.fail('이용 제한: '+a.restricted.reason);
+  var active=Object.values(s.sessions).some(function(v){return v.accountId===a.id&&!v.replacedAt&&v.expires>t;});
+  if(active&&r.takeover!==true)return {state:s,response:{loginConflict:true}};
+  Object.keys(s.sessions).forEach(function(k){var v=s.sessions[k];if(v.accountId!==a.id)return;if(v.expires<=t)delete s.sessions[k];else if(!v.replacedAt){v.replacedAt=t;v.expires=Math.min(v.expires,t+King.DAY);}});
+  Object.keys(s.adminSessions).forEach(function(k){if(s.adminSessions[k].accountId===a.id)delete s.adminSessions[k];});
+  Object.keys(s.proxies).forEach(function(k){if(s.proxies[k].actorId===a.id)delete s.proxies[k];});
+  King.ensureProgression(a);a.lastLogin=t;a.lastSeen=t;a.logins++;if(!env.isAdmin(a.name))King.log(s,a,'로그인',{},t,env);
+  var token=env.id()+env.id()+env.id();s.sessions[env.hash(token)]={accountId:a.id,expires:t+(r.remember?30*King.DAY:12*3600000)};
+  King.advance(s,t,env);if(King.achievements)King.achievements(s,a,t,env);s.revision++;
+  var snapshot=King.snapshot(s,a,t,null,env);snapshot.admin=env.isAdmin(a.name);
+  var response={token,snapshot};
+  if(isAdmin){var proof=King.admin(s,a,{actor:a},{action:'adminUnlock',token,secret:r.adminSecret},env);response.adminToken=proof.adminToken;response.adminExpires=proof.expires;}
+  return {state:s,response};
+};
+King.authenticate = function(s,r,env) {
+  if(typeof r.token!=='string')King.fail('로그인 인증이 필요합니다.');var session=s.sessions[env.hash(r.token)],t=env.now();
+  if(!session||session.expires<=t||!s.accounts[session.accountId])King.fail('로그인 인증이 만료되었습니다.');
+  if(session.replacedAt)King.fail('다른 기기 또는 브라우저에서 로그인하여 로그아웃되었습니다.');
+  var actor=s.accounts[session.accountId],proof=s.adminSessions[env.hash(r.adminToken||'')];
+  var admin=env.isAdmin(actor.name)&&proof&&proof.accountId===actor.id&&proof.session===env.hash(r.token)&&proof.expires>t;
+  if(r.proxyToken){var proxy=s.proxies[env.hash(r.proxyToken)];if(!admin||!proxy||proxy.actorId!==actor.id||proxy.adminProof!==env.hash(r.adminToken)||proxy.expires<=t)King.fail('대리 인증이 만료되었습니다.');return {actor,account:s.accounts[proxy.targetId],admin:true,proxy:true};}
+  return {actor,account:actor,admin:!!admin,proxy:false};
+};
+King.activity = function(s,a,r,t,env) {
+  if(t-a.lastSeen>=1800000){a.logins++;a.lastLogin=t;if(!env.isAdmin(a.name))King.log(s,a,'로그인',{},t,env);}
+  a.lastSeen=t;
+  // Only overlap of consecutive active heartbeats counts; never trust elapsed client seconds.
+  if(r.active===true&&a.lastActive&&t-a.lastActive<=90000){var start=Math.max(a.lastActive,a.activityUntil||0),seconds=Math.max(0,Math.min(60,Math.floor((t-start)/1000)));var previousBlock=Math.floor(a.playSeconds/600);a.playSeconds+=seconds;a.lifetimeSeconds+=seconds;if(Math.floor(a.playSeconds/600)>previousBlock)King.awardXp(a,'time',t);a.activityUntil=t;}
+  if(r.active===true&&a.lastActive&&t>a.lastActive)a.backupVersion=(a.backupVersion||0)+1;
+  a.lastActive=r.active===true?t:0;
+  var date=King.date(t);if(r.active&&a.statistics.dates.indexOf(date)<0)a.statistics.dates.push(date);
+};
+
+
+// ===== Admin.gs =====
+var King = typeof King === 'undefined' ? {} : King;
+King.audit = function(s,actor,target,action,before,after,t,env,reason) {var id=env.id();s.audits[id]={id,actorId:actor.id,actor:actor.name,target,action,before:King.clone(before),after:King.clone(after),reason,at:t,time:King.stamp(t)};};
+King.targets = function(s,input) {if(!Array.isArray(input)||!input.length||input.length>200)King.fail('대상을 1~200명 선택해 주세요.');var ids=Array.from(new Set(input));if(ids.some(function(id){return !s.accounts[id];}))King.fail('대상 계정을 확인해 주세요.');return ids;};
+King.admin = function(s,a,auth,r,env) {
+  var t=env.now(),actor=auth.actor;
+  if(r.action==='adminUnlock'){
+    if(!env.isAdmin(actor.name)||!env.adminCheck(r.secret||''))King.fail('관리자 인증에 실패했습니다.');
+    var token=env.id()+env.id()+env.id();s.adminSessions[env.hash(token)]={accountId:actor.id,session:env.hash(r.token),expires:t+900000};
+    return {adminToken:token,expires:t+900000};
+  }
+  if(!auth.admin||auth.proxy)King.fail('관리자 인증이 필요합니다.');
+  if(r.action==='adminOverview'){
+    var filter=King.text(r.search||'',30),offset=King.int(r.offset||0,0,10000000),players=Object.values(s.accounts).filter(function(u){return u.name.indexOf(filter)>=0;}).map(function(u){var total=King.totalAssets(s,u);return {id:u.id,name:u.name,cash:u.cash,total:total,joined:u.joined,lastLogin:u.lastLogin,lastSeen:u.lastSeen,logins:u.logins,lifetimeSeconds:u.lifetimeSeconds,restricted:u.restricted||null};});
+    var sort=['name','cash','total','lastSeen','joined','lifetimeSeconds'].indexOf(r.sort)>=0?r.sort:'name';players.sort(function(a,b){return sort==='name'?a.name.localeCompare(b.name):b[sort]-a[sort];});
+    return {players:players.slice(offset,offset+30),next:offset+30<players.length?offset+30:null,count:Object.keys(s.accounts).length,filteredCount:players.length,marketTime:s.market.minute*60000,active:Object.values(s.accounts).filter(function(p){return p.lastSeen>t-300000;}).length,receiptCount:Object.keys(s.receipts).length,reports:Object.values(s.reports).slice(-100).reverse(),notices:Object.values(s.announcements).slice(-100).reverse(),audits:Object.values(s.audits).slice(-100).reverse(),maintenance:s.maintenance,health:env.health?env.health():null};
+  }
+  var target=r.targetId?s.accounts[r.targetId]:null;
+  if(r.targetId&&!target)King.fail('플레이어를 찾을 수 없습니다.');
+  if(r.action==='adminPlayer')return {player:King.snapshot(s,target,t),restriction:target.restricted||null};
+  if(r.action==='adminProxy'){
+    if(!target)King.fail('플레이어를 선택해 주세요.');Object.keys(s.proxies).forEach(function(k){if(s.proxies[k].actorId===actor.id)delete s.proxies[k];});
+    var proxyToken=env.id()+env.id();s.proxies[env.hash(proxyToken)]={actorId:actor.id,targetId:target.id,adminProof:env.hash(r.adminToken),expires:t+900000};King.audit(s,actor,target.id,'대리 시작',{}, {},t,env,'플레이어 시점');return {proxyToken};
+  }
+  if(r.action==='adminReturn'){Object.keys(s.proxies).forEach(function(k){if(s.proxies[k].actorId===actor.id)delete s.proxies[k];});return {};}
+  var reason=King.text(r.reason||'',500),before={},after={},targets,auditTarget;
+  if(r.action==='adminNotice'){
+    targets=r.targets==='all'?'all':King.targets(s,r.targets);if(['초안','게시','내림'].indexOf(r.status)<0)King.fail('공지 상태를 확인해 주세요.');
+    var title=King.text(r.title,100),body=King.text(r.body,4000);if(!title||!body)King.fail('제목과 내용을 입력해 주세요.');var id=r.noticeId||env.id();before=s.announcements[id]||{};after={id,title,body,targets,status:r.status,kind:['notice','update','maintenance'].indexOf(r.kind)>=0?r.kind:'notice',at:t};s.announcements[id]=after;
+  }else if(r.action==='adminReward'){
+    targets=King.targets(s,r.targets);var reward=King.clone(r.reward||{});if(!reason)King.fail('지급 사유를 입력해 주세요.');
+    if(reward.kind==='cash')King.int(reward.amount,1,100000000000);
+    else if(reward.kind==='security'){if(!s.market.stocks[reward.symbol])King.fail('종목을 확인해 주세요.');King.int(reward.quantity,1,100000000);}
+    else if(reward.kind==='badge'){reward.badge=King.text(reward.badge,50);if(!reward.badge)King.fail('배지 이름을 입력해 주세요.');}
+    else King.fail('보상 종류를 확인해 주세요.');
+    var batch=env.id();targets.forEach(function(id){var cid=batch+':'+id;s.claims[cid]={id:cid,accountId:id,reward,net:reward.kind==='cash'?reward.amount:0,reason,at:t,payAt:t,status:'대기',batch,reportId:r.reportId||null};});if(r.reportId&&s.reports[r.reportId])s.reports[r.reportId].rewardBatch=batch;after={batch,targets,reward};
+  }else if(r.action==='adminRestriction'){
+    targets=King.targets(s,r.targets);if(targets.some(function(id){return env.isAdmin(s.accounts[id].name);}))King.fail('관리자 계정 제한은 복구 경로를 보호하기 위해 차단됩니다.');
+    if(r.enabled&&!reason)King.fail('제한 사유를 입력해 주세요.');if(r.until)King.int(r.until,t+1,t+3650*King.DAY);
+    targets.forEach(function(id){before[id]=s.accounts[id].restricted||null;s.accounts[id].restricted=r.enabled?{reason,until:r.until||null}:null;});after={targets,enabled:!!r.enabled,until:r.until||null};
+  }else if(r.action==='adminMaintenance'){
+    if(r.enabled&&!reason)King.fail('점검 사유를 입력해 주세요.');before=s.maintenance;s.maintenance={enabled:!!r.enabled,reason,until:King.text(r.until||'',100)};after=s.maintenance;
+  }else if(r.action==='adminAdjust'){
+    if(!target||!reason)King.fail('대상과 정정 사유가 필요합니다.');before={cash:target.cash,holdings:King.clone(target.holdings),started:target.started,achievements:King.clone(target.achievements)};
+    // Any forced holding correction releases pending reservations explicitly.
+    Object.values(s.orders).filter(function(o){return o.accountId===target.id&&o.status==='대기';}).forEach(function(o){o.status='취소';o.closed=t;});
+    if(r.cash!==undefined)target.cash=King.int(r.cash,0,900000000000000);
+    if(r.symbol){if(!s.market.stocks[r.symbol])King.fail('종목을 확인해 주세요.');var quantity=King.int(r.quantity,0,100000000);if(quantity)target.holdings[r.symbol]={quantity,cost:King.int(r.cost||0,0,900000000000000),since:t};else delete target.holdings[r.symbol];}
+    if(r.day!==undefined)target.started=t-(King.int(r.day,1,10000)-1)*King.DAY;
+    if(r.badge){var badge=King.text(r.badge,50);target.achievements['manual-'+env.id()]={kind:'reward',title:badge,at:t};}
+    target.backupVersion=(target.backupVersion||0)+1;after={cash:target.cash,holdings:target.holdings,started:target.started,achievements:target.achievements};
+  }else if(r.action==='adminCancelOrder'){
+    var o=s.orders[r.orderId];if(!o)King.fail('주문이 없습니다.');before=King.clone(o);if(o.status==='대기'){o.status='취소';o.closed=t;}after=o;
+  }else if(r.action==='adminMarket'){
+    var x=s.market.stocks[r.symbol];if(!x||!reason)King.fail('종목과 운영 사유를 확인해 주세요.');before=King.clone(x);
+    if(r.operation==='price'){if(x.fund)King.fail('ETF 가격은 장부와 괴리율로 결정됩니다.');x.price=King.int(r.price,Math.max(1,Math.ceil(x.base*.7)),Math.max(1,Math.floor(x.base*1.3)));x.tradeEpoch=(x.tradeEpoch||0)+1;x.fundamental=x.price/(1+x.pressure);x.history.push([t,x.price]);}
+    else if(r.operation==='halt'){x.status='거래정지';King.news(s,x,x.name+' 거래정지','운영상 거래가 정지되었습니다.',t,0,env);}else if(r.operation==='resume'){if(x.status==='비상장')King.fail('폐지된 종목은 거래 재개할 수 없습니다.');if(x.status!=='상장'){x.status='상장';King.news(s,x,x.name+' 거래 재개','운영상 거래정지가 해제되었습니다.',t,0,env);}}
+    else if(r.operation==='delist'){if(x.fund)King.fail('ETF 상장폐지는 펀드 청산 계획이 필요합니다.');x.delistAt=King.int(r.at,t+72*3600000,t+365*King.DAY);x.settlement=r.settlement===null?null:King.int(r.settlement,0,x.price);King.news(s,x,x.name+' 상장폐지 확정','최소 72시간 거래 기회 후 '+King.stamp(x.delistAt)+' 폐지 예정. '+(x.settlement===null?'비상장 보유로 전환됩니다.':'주당 회수금 '+x.settlement+'원입니다.'),t,0,env);}
+    else if(r.operation==='split'){if(x.fund)King.fail('ETF 분할은 지원하지 않습니다.');var ratio=King.int(r.ratio,2,100);if(x.price%ratio||x.base%ratio)King.fail('평가액 보존을 위해 현재가와 기준가가 분할 비율로 나누어지는 경우에만 분할할 수 있습니다.');x.price=Math.max(1,Math.round(x.price/ratio));x.base=Math.max(1,Math.round(x.base/ratio));x.fundamental/=ratio;x.float*=ratio;x.high/=ratio;x.low/=ratio;x.history=x.history.map(function(p){return [p[0],p[1]/ratio];});Object.values(s.accounts).forEach(function(u){if(u.holdings[x.id])u.holdings[x.id].quantity*=ratio;});Object.values(s.market.stocks).filter(function(v){return v.fund;}).forEach(function(v){if(v.fund.positions[x.id])v.fund.positions[x.id]*=ratio;});Object.values(s.orders).filter(function(o){return o.symbol===x.id&&o.status==='대기';}).forEach(function(o){o.status='취소';King.log(s,s.accounts[o.accountId],'분할로 예약 취소',o,t,env);});King.news(s,x,x.name+' 주식 분할',ratio+'대 1 분할. 보유 수량이 조정되며 예약 주문은 취소됩니다.',t,0,env);}
+    else if(['listing','financial','dividend'].indexOf(r.operation)>=0)x=King.corporate(s,x,r,t,env);else King.fail('시장 작업을 확인해 주세요.');after=King.clone(x);auditTarget=x.id;if(r.operation==='listing')before={};
+  }else if(r.action==='adminNews'){
+    var newsTitle=King.text(r.title,100),fact=King.text(r.body,4000);if(!newsTitle||!fact)King.fail('제목과 내용을 입력해 주세요.');if(r.newsId){var existing=s.market.news.find(function(n){return n.id===r.newsId;});if(!existing)King.fail('수정할 뉴스를 찾을 수 없습니다.');before=King.clone(existing);existing.title=newsTitle;existing.fact=fact;existing.body=fact.split(/\r?\n+/).filter(Boolean);delete existing.beginner;existing.updatedAt=t;existing.symbol=r.symbol||null;var related=s.market.stocks[existing.symbol];existing.sector=related?related.sector:'경제';existing.image=King.newsImage(existing.sector);}else King.news(s,s.market.stocks[r.symbol]||null,newsTitle,fact,t,0,env);after={title:newsTitle,body:fact};
+  }else if(r.action==='adminEconomy'){
+    before=s.market.economy;after={rate:King.int(r.rate,0,3000)/100,inflation:King.int(r.inflation,-1000,10000)/100,activity:King.int(r.activity,0,200)};s.market.economy=after;
+  }else if(r.action==='adminReport'){
+    var report=s.reports[r.reportId];if(!report||['접수','검토','채택','종료'].indexOf(r.status)<0)King.fail('제보 상태를 확인해 주세요.');before=King.clone(report);report.status=r.status;after=report;
+  }else King.fail('지원하지 않는 관리자 작업입니다.');
+  King.audit(s,actor,auditTarget||r.targetId||targets||r.symbol||'전체',r.action,before,after,t,env,reason);return {ok:true,result:after};
+};
+
+King.proxyState = function(s,a){return King.clone({cash:a.cash,holdings:a.holdings,settings:a.settings,achievements:a.achievements,orders:Object.values(s.orders).filter(function(v){return v.accountId===a.id;}),claims:Object.values(s.claims).filter(function(v){return v.accountId===a.id;})});};
+
+
+// ===== Alerts.gs =====
+var King = typeof King === 'undefined' ? {} : King;
+King.addAlert = function(a,id,kind,title,body,t,symbol) {
+  a.alerts=a.alerts||[];if(a.alerts.some(function(n){return n.id===id;}))return;
+  a.alerts.push({id,kind,title,body,at:t,symbol:symbol||null});a.alerts=a.alerts.slice(-200);
+};
+King.alertRisk = function(s,x,title,body,t,id) {
+  if(!x||!/거래정지|거래 재개|거래재개|상장폐지/.test(title))return;
+  if(/상장폐지/.test(title)&&x.status!=='비상장')return;
+  Object.values(s.accounts).forEach(function(a){if(a.holdings[x.id]||a.settings.favorites.indexOf(x.id)>=0)King.addAlert(a,id,/상장폐지/.test(title)?'delisted':/재개/.test(title)?'resume':'halt',title,body,t,x.id);});
+};
+King.checkAlerts = function(s,t) {
+  Object.values(s.accounts).forEach(function(a){(a.priceAlerts||[]).forEach(function(rule){
+    var x=s.market.stocks[rule.symbol];if(rule.triggered||!x||x.status!=='상장'||t<=rule.at)return;
+    if(rule.direction==='above'?x.price>=rule.price:x.price<=rule.price){rule.triggered=t;King.addAlert(a,rule.id,rule.direction==='above'?'targetAbove':'targetBelow',x.name+' 목표가 도달','설정 '+rule.price+'원 · 확인 시세 '+x.price+'원. 자동 주문은 실행하지 않습니다.',t,x.id);}
+  });});
+};
+King.setPriceAlert = function(s,a,r,t,env) {
+  a.priceAlerts=a.priceAlerts||[];
+  if(r.remove){a.priceAlerts=a.priceAlerts.filter(function(v){return v.id!==r.remove;});return {};}
+  King.instrument(s,a,r.symbol,t);if(['above','below'].indexOf(r.direction)<0)King.fail('목표가 방향을 확인해 주세요.');
+  var price=King.int(r.price,1,1000000000);if(a.priceAlerts.filter(function(v){return !v.triggered;}).length>=20)King.fail('활성 목표가는 최대 20개입니다.');
+  a.priceAlerts=a.priceAlerts.filter(function(v){return !v.triggered;});var rule={id:env.id(),symbol:r.symbol,direction:r.direction,price,at:t};a.priceAlerts.push(rule);return {priceAlert:rule};
+};
+
+King.notificationOptions=[
+ ['buyFilled','예약 매수 체결','예약','orders'],['sellFilled','예약 매도 체결','예약','orders'],['stopFilled','손절·OCO 체결','예약','orders'],['orderFailed','예약 주문 실패','예약','orders'],['orderClosed','예약 만료·자동 취소','예약','orders'],
+ ['targetAbove','목표 가격 이상 도달','시세','targets'],['targetBelow','목표 가격 이하 도달','시세','targets'],['halt','보유·관심 종목 거래정지','시세','risk'],['resume','보유·관심 종목 거래 재개','시세','risk'],['delisted','실제 상장폐지 처리 결과','시세','risk'],
+ ['dividend','주식 배당 수령 가능','보상'],['distribution','ETF 분배금 수령 가능','보상'],['reward','관리자 보상 도착','보상'],['attendance','오늘 출석 보상','보상'],['achievement','업적 달성','성장'],['level','레벨 상승','성장'],
+ ['heldNews','보유 종목 새 뉴스','뉴스'],['favoriteNews','관심 종목 새 뉴스','뉴스'],['marketNews','시장·경제 새 뉴스','뉴스'],['friendRequest','친구 요청 도착','친구'],['friendAccepted','친구 요청 수락','친구'],['notice','운영 공지','공지'],['update','업데이트 안내','공지'],['maintenance','점검 안내','공지'],['supportReply','고객센터 새 답변','대화'],['friendMessage','친구 새 메시지','대화']
+].map(function(v){return {id:v[0],label:v[1],category:v[2],legacy:v[3]||null};});
+King.notificationSettings=function(a){var old=a.settings.notifications||{},next={};King.notificationOptions.forEach(function(o){next[o.id]=o.id in old?old[o.id]!==false:!o.legacy||old[o.legacy]!==false;});a.settings.notifications=next;return next;};
+King.orderAlertKind=function(type,data){if(type==='예약 체결')return data.kind==='stop'||data.kind==='oco'?'stopFilled':data.kind==='limitSell'?'sellFilled':'buyFilled';if(type==='예약 실패')return 'orderFailed';if(type==='예약 만료'||/로 예약 취소$/.test(type))return 'orderClosed';return null;};
+King.alertNews=function(s,n,t){
+ // Delisting forecasts remain articles, never advance warnings in the alert feed.
+ if(/상장폐지/.test(n.title+' '+(n.fact||'')))return;
+ Object.values(s.accounts).forEach(function(a){if(n.at<a.started)return;var kind=!n.symbol?'marketNews':a.holdings[n.symbol]?'heldNews':a.settings.favorites.indexOf(n.symbol)>=0?'favoriteNews':null;if(kind){King.addAlert(a,n.id,kind,n.title,'뉴스에서 내용을 확인해 주세요.',t,n.symbol);if(kind==='heldNews'&&a.settings.favorites.indexOf(n.symbol)>=0)a.alerts.find(function(v){return v.id===n.id;}).alsoFavorite=true;}});
+};
+King.notificationFeed=function(s,a,t,proxy,includeMuted){
+ var settings=King.notificationSettings(a),items=[],options={};King.notificationOptions.forEach(function(o){options[o.id]=o;});
+ function add(id,kind,title,body,at,symbol){items.push({id,kind,title,body,at,symbol:symbol||null});}
+ (a.alerts||[]).forEach(function(n){var kind=n.kind;if(kind==='heldNews'&&n.alsoFavorite&&settings.heldNews===false)kind='favoriteNews';
+   if(kind==='risk'){if(/상장폐지/.test(n.title)){var article=s.market.news.find(function(v){return v.id===n.id;});if(!article||!/상장폐지되었습니다/.test(article.fact||''))return;kind='delisted';}else kind=/재개/.test(n.title)?'resume':'halt';}
+   if(kind==='orders'){var rec=s.records[n.id];kind=rec?King.orderAlertKind(rec.type,rec.data):'buyFilled';}
+   if(kind==='targets'){var rule=(a.priceAlerts||[]).find(function(v){return v.id===n.id;});kind=rule&&rule.direction==='below'?'targetBelow':'targetAbove';}
+   if(proxy&&['friendRequest','friendAccepted','supportReply','friendMessage'].indexOf(kind)>=0)return;
+   add(n.id,kind,n.title,n.body,n.at,n.symbol);
+ });
+ Object.values(s.claims).forEach(function(c){if(c.accountId!==a.id||c.status!=='대기'||!c.reward&&c.runId!==a.runId||c.payAt>t)return;var kind=c.reward?'reward':(s.market.stocks[c.symbol]||{}).fund?'distribution':'dividend';add('claim-'+c.id,kind,options[kind].label,c.reward?c.reason||'보상함에서 확인해 주세요.':(c.name||'배당')+' · '+c.net+'원',c.payAt||c.at,c.symbol);});
+ var attendance=King.attendanceView(a,t);if(attendance.firstGranted&&!attendance.claimed)add('attendance-'+a.runId+'-'+King.date(t),'attendance','오늘 출석 보상','출석 메뉴에서 '+attendance.amount+'원을 받아 주세요.',Date.parse(King.date(t)+'T00:00:00+09:00'));
+ Object.values(s.announcements).forEach(function(n){if(n.status!=='게시'||n.targets!=='all'&&n.targets.indexOf(a.id)<0)return;add(n.id,['update','maintenance'].indexOf(n.kind)>=0?n.kind:'notice',n.title,n.body,n.at);});
+ return items.filter(function(n){return options[n.kind]&&(includeMuted||settings[n.kind]!==false);}).map(function(n){n.category=options[n.kind].category;return n;}).sort(function(x,y){return y.at-x.at;});
+};
+
+
+// ===== Chat.gs =====
+var King = typeof King === 'undefined' ? {} : King;
+King.chatActions=['friendMessages','friendSend','supportList','supportCreate','supportRead','supportSend','adminSupportList','adminSupportRead','adminSupportSend'];
+King.supportCategories=['오류·버그','기능 제안','이용 질문','기타'];
+King.chatAuthorize=function(s,a,auth,r){
+  if(auth.proxy)King.fail('대화는 본인 계정에서 이용해 주세요.');
+  if(r.action.indexOf('adminSupport')===0&&!auth.admin)King.fail('관리자 인증이 필요합니다.');
+  if(r.action==='friendMessages'||r.action==='friendSend'){
+    var other=Object.values(s.accounts).find(function(v){return v.social&&v.social.id===r.friendId;}),link=other&&King.friendLink(s,a,other);
+    if(!other||!link||link.status!=='accepted')King.fail('서로 친구인 계정과만 대화할 수 있어요.');return other;
+  }
+  if(/(?:Read|Send)$/.test(r.action)){
+    var c=(s.conversations||{})[r.conversationId];if(!c||r.action.indexOf('admin')!==0&&c.accountId!==a.id)King.fail('문의 대화를 찾을 수 없습니다.');return c;
+  }
+};
+King.chatPage=function(rows,r,mine){
+  var end=r.before?rows.findIndex(function(v){return v.id===r.before;}):rows.length;if(end<0)King.fail('이전 메시지 위치를 확인해 주세요.');
+  var start=Math.max(0,end-50),page=rows.slice(start,end);
+  return {messages:page.map(function(v){return {id:v.id,body:v.body,at:v.at,role:v.role||'friend',mine:mine(v)};}),before:start&&page.length?page[0].id:null};
+};
+King.chatBody=function(a,r,t){
+  var body=King.text(r.body,2000);if(!body)King.fail('메시지를 입력해 주세요.');
+  var rate=a.messageRate;if(!rate||t-rate.at>=60000)rate=a.messageRate={at:t,count:0};if(rate.count>=20)King.fail('메시지가 너무 빠릅니다. 잠시 후 보내 주세요.');rate.count++;return body;
+};
+King.supportSummary=function(s,c,admin){var messages=c.messages||[],last=messages[messages.length-1];return {id:c.id,category:c.category,at:last?last.at:c.at,preview:last?last.body.slice(0,80):'',nickname:admin?(s.accounts[c.accountId]||{}).name:undefined,unread:messages.filter(function(m,i){return i>=(admin?c.adminRead||0:c.playerRead||0)&&m.role===(admin?'player':'admin');}).length};};
+King.chats=function(s,a,r,t,env,auth){
+  s.friendMessages=s.friendMessages||{};s.conversations=s.conversations||{};
+  // Existing reports retain their ids so adoption and reward links continue to work.
+  Object.values(s.reports).forEach(function(p){if(!s.conversations[p.id]&&s.accounts[p.accountId])s.conversations[p.id]={id:p.id,accountId:p.accountId,category:p.type==='기능 제안'?'기능 제안':p.type==='기타'?'기타':'오류·버그',at:p.at,messages:[{id:'report-'+p.id,role:'player',body:p.body,at:p.at}],playerRead:1,adminRead:0};});
+  var target=King.chatAuthorize(s,a,auth,r),admin=r.action.indexOf('admin')===0;
+  if(r.action==='friendMessages'||r.action==='friendSend'){
+    var rows=Object.values(s.friendMessages).filter(function(v){return v.from===a.id&&v.to===target.id||v.from===target.id&&v.to===a.id;});
+    if(r.action==='friendSend'){var id=env.id();s.friendMessages[id]={id,from:a.id,to:target.id,body:King.chatBody(a,r,t),at:t};King.addAlert(target,id,'friendMessage','친구 새 메시지','친구 대화에서 확인해 주세요.',t);return {sent:id};}
+    return King.chatPage(rows,r,function(v){return v.from===a.id;});
+  }
+  if(r.action==='supportList'||r.action==='adminSupportList')return {conversations:Object.values(s.conversations).filter(function(c){return admin||c.accountId===a.id;}).map(function(c){return King.supportSummary(s,c,admin);}).sort(function(x,y){return y.at-x.at;})};
+  if(r.action==='supportCreate'){
+    if(King.supportCategories.indexOf(r.category)<0)King.fail('문의 종류를 선택해 주세요.');
+    if(Object.values(s.conversations).filter(function(c){return c.accountId===a.id;}).length>=100)King.fail('문의 대화는 최대 100개입니다. 기존 문의를 이어 주세요.');
+    var body=King.chatBody(a,r,t),cid=env.id(),c={id:cid,accountId:a.id,category:r.category,at:t,messages:[{id:env.id(),role:'player',body,at:t}],playerRead:1,adminRead:0};s.conversations[cid]=c;
+    s.reports[cid]={id:cid,accountId:a.id,type:r.category,body,at:t,time:King.stamp(t),status:'접수',environment:King.text(r.environment||'',300)};
+    return {conversation:King.supportSummary(s,c,false)};
+  }
+  var c=target;
+  if(r.action==='supportSend'||r.action==='adminSupportSend'){
+    if(c.messages.length>=2000)King.fail('새 문의 대화를 시작해 주세요.');
+    var message={id:env.id(),role:admin?'admin':'player',body:King.chatBody(a,r,t),at:t};c.messages.push(message);if(admin)King.addAlert(s.accounts[c.accountId],message.id,'supportReply','고객센터 새 답변','고객센터에서 답변을 확인해 주세요.',t);
+    c[admin?'adminRead':'playerRead']=c.messages.length;return {sent:message.id};
+  }
+  if(r.action==='supportRead'||r.action==='adminSupportRead'){
+    if(!r.before)c[admin?'adminRead':'playerRead']=c.messages.length;
+    return Object.assign({conversation:King.supportSummary(s,c,admin)},King.chatPage(c.messages,r,function(v){return v.role===(admin?'admin':'player');}));
+  }
+  King.fail('지원하지 않는 대화 요청입니다.');
+};
+
+
+// ===== Code.gs =====
+function kingEnv_() {
+  var properties=PropertiesService.getScriptProperties(),key=properties.getProperty('SIGNING_KEY');if(!key)throw new Error('서버 초기 설정이 필요합니다.');
+  function hex(bytes){return bytes.map(function(b){return ('0'+((b+256)%256).toString(16)).slice(-2);}).join('');}
+  function hash(value){return hex(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256,String(value),Utilities.Charset.UTF_8));}
+  return {health:function(){return {lastTick:properties.getProperty('LAST_TICK_AT')||'미실행',tickMs:Number(properties.getProperty('LAST_TICK_MS')||0),lastStorageError:properties.getProperty('LAST_STORAGE_ERROR_AT')||null};},now:function(){return Date.now();},id:function(){return Utilities.getUuid();},hash,sign:function(value){return hex(Utilities.computeHmacSha256Signature(value,key));},isAdmin:function(name){return (properties.getProperty('ADMIN_NAMES')||'').split(',').map(function(n){return n.trim();}).indexOf(name)>=0;},adminCheck:function(secret){var stored=properties.getProperty('ADMIN_SECRET_HASH');return !!stored&&typeof secret==='string'&&secret.length>=12&&hash(secret)===stored;}};
+}
+function json_(data){return ContentService.createTextOutput(JSON.stringify(data)).setMimeType(ContentService.MimeType.JSON);}
+function doGet(){
+  try {var db=KingStore.open(),s=KingStore.read(db);return json_({service:'stock-king',version:1,maintenance:s.maintenance,serverTime:Date.now()});}
+  catch(e){return json_({service:'stock-king',version:1,error:'SETUP_REQUIRED',message:'게임 서버 설치를 완료해 주세요.'});}
+}
+function rateLimit_(r,env) {
+  if(['login','signup','adminUnlock'].indexOf(r.action)<0)return;
+  var cache=CacheService.getScriptCache(),key='auth:'+env.hash((r.name||r.token||'unknown').slice(0,200)),attempts=Number(cache.get(key)||0);
+  if(attempts>=8)throw new Error('인증 시도가 많습니다. 15분 후 다시 시도해 주세요.');cache.put(key,String(attempts+1),900);
+}
+function doPost(e) {
+  var lock=LockService.getScriptLock(),committing=false;
+  try {
+    if(!e||!e.postData||e.postData.contents.length>600000)throw new Error('요청 크기를 확인해 주세요.');
+    var r=JSON.parse(e.postData.contents);if(!r||typeof r.action!=='string')throw new Error('요청 형식을 확인해 주세요.');
+    if(!lock.tryLock(15000))return json_({error:'BUSY',message:'다른 요청 처리 중입니다. 같은 요청으로 다시 시도해 주세요.'});
+    var env=kingEnv_();rateLimit_(r,env);var db=KingStore.open(),state=KingStore.read(db),out=King.execute(state,r,env);
+    if(out.state!==state){committing=true;KingStore.write(db,out.state);}
+    return json_(Object.assign({service:'stock-king',version:1},out.response));
+  }catch(error){
+    // Never serialize request bodies, PINs or provider stack traces to the caller.
+    if(committing)try{PropertiesService.getScriptProperties().setProperty('LAST_STORAGE_ERROR_AT',King.stamp(Date.now()));}catch(ignored){}
+    var message=String(error.message||'요청 처리 실패');
+    if(/quota|Service|Exception|Sheets|Spreadsheet|JSON|TypeError|ReferenceError|property|undefined/i.test(message))message='서버 처리 또는 저장에 실패했습니다. 같은 요청으로 재시도해 주세요.';
+    return json_({error:committing?'COMMIT_UNKNOWN':'REQUEST_FAILED',message:committing?'저장 결과를 확인하지 못했습니다. 같은 요청으로 재시도해 주세요.':message});
+  }finally{if(lock.hasLock())lock.releaseLock();}
+}
+function setupStockKing() {
+  var lock=LockService.getScriptLock();lock.waitLock(30000);
+  try{
+    var p=PropertiesService.getScriptProperties();if(p.getProperty('STOCK_KING_SHEET_ID'))throw new Error('이미 설정되어 있습니다. 기존 데이터를 덮어쓰지 않았습니다.');
+    var book=SpreadsheetApp.create('주식왕 시뮬레이션 서버 데이터');book.setSpreadsheetTimeZone('Asia/Seoul');book.getSheets()[0].setName('서버원장');book.insertSheet('회원정보');book.getSheetByName('회원정보').getRange('C:C').setNumberFormat('@');
+    SpreadsheetApp.flush();var envKey=Utilities.getUuid()+Utilities.getUuid();p.setProperty('SIGNING_KEY',envKey);
+    var state=King.initial(Date.now());King.initFunds(state);KingStore.write({book,sheet:book.getSheetByName('서버원장')},state);p.setProperty('STOCK_KING_SHEET_ID',book.getId());
+    installMarketTrigger();console.log('설정 완료. 데이터 시트: '+book.getUrl());
+  }finally{lock.releaseLock();}
+}
+function installMarketTrigger() {
+  if(!PropertiesService.getScriptProperties().getProperty('STOCK_KING_SHEET_ID'))throw new Error('setupStockKing을 먼저 실행해 주세요.');
+  var exists=ScriptApp.getProjectTriggers().some(function(t){return t.getHandlerFunction()==='marketTick';});if(!exists)ScriptApp.newTrigger('marketTick').timeBased().everyMinutes(5).create();
+}
+function marketTick() {
+  var lock=LockService.getScriptLock();if(!lock.tryLock(1000))return;
+  try{var begin=Date.now(),db=KingStore.open(),s=KingStore.read(db),env=kingEnv_();King.advance(s,begin,env);s.revision++;KingStore.write(db,s);PropertiesService.getScriptProperties().setProperties({LAST_TICK_MS:String(Date.now()-begin),LAST_TICK_AT:King.stamp(Date.now())});}
+  finally{lock.releaseLock();}
+}
+function configureAdminSecret() {
+  var p=PropertiesService.getScriptProperties(),secret=p.getProperty('ADMIN_SECRET_SETUP');if(!secret||secret.length<16)throw new Error('스크립트 속성 ADMIN_SECRET_SETUP에 16자 이상 무작위 암호를 설정해 주세요.');
+  p.setProperty('ADMIN_SECRET_HASH',kingEnv_().hash(secret));p.deleteProperty('ADMIN_SECRET_SETUP');console.log('관리자 강화 인증 설정 완료. 임시 원문 속성을 삭제했습니다.');
+}
+
+
+// ===== Corporate.gs =====
+var King = typeof King === 'undefined' ? {} : King;
+King.corporate = function(s,x,r,t,env) {
+  if(r.operation==='listing'){
+    var id=King.text(r.listingSymbol||'',6),name=King.text(r.name||'',40),sector=King.text(r.sector||'',20);
+    if(!/^\d{6}$/.test(id)||s.market.stocks[id]||!name)King.fail('미등록 6자리 종목코드와 기업명을 확인해 주세요.');
+    if(['KOSPI','KOSDAQ'].indexOf(r.market)<0||['반도체','자동차','에너지','바이오','디지털','소비재'].indexOf(sector)<0)King.fail('시장과 산업을 확인해 주세요.');
+    if(Object.values(s.market.stocks).filter(function(v){return !v.fund&&v.status!=='비상장';}).length>=40)King.fail('운영 중인 일반 종목은 최대 40개입니다.');
+    var price=King.int(r.price,1,1000000000);
+    x={id,name,sector,market:r.market,status:'상장',price,base:price,fundamental:price,pressure:0,listed:King.date(t),high:price,low:price,float:30000000,liquidity:200000000,description:sector+' 관련 기업의 가상 투자 종목.',history:[[t,price]],financials:[{at:t,revenue:300000000000,profit:20000000000,debt:100000000000}]};s.market.stocks[id]=x;
+    King.news(s,x,name+' 신규 상장','공통 시장에 신규 상장했습니다. 가격과 실적은 가상입니다.',t,0,env);return x;
+  }
+  if(x.fund)King.fail('일반 기업의 실적·배당 운영 메뉴입니다. ETF는 운용 장부 규칙을 따릅니다.');
+  if(r.operation==='financial'){
+    var data={at:t,revenue:King.int(r.revenue,0,900000000000000),profit:King.int(r.profit,-900000000000000,900000000000000),debt:King.int(r.debt,0,900000000000000)};
+    x.financials.push(data);x.financials=x.financials.slice(-12);King.news(s,x,x.name+' 실적 정정 공시','가상 매출 '+data.revenue+'원, 영업이익 '+data.profit+'원, 부채 '+data.debt+'원으로 정정되었습니다.',t,0,env);
+  }else if(r.operation==='dividend'){
+    x.dividendOverride=King.int(r.perShare,0,Math.max(0,Math.floor(x.price*.3)));King.news(s,x,x.name+' 배당 정책 변경','다음 일요일 공시부터 주당 '+x.dividendOverride+'원 정책을 적용합니다. 권리 확정 시점의 주가보다 큰 배당은 감액 공시합니다. 권리 18시, 수령 19시.',t,0,env);
+  }else King.fail('기업 운영 작업을 확인해 주세요.');
+  return x;
+};
+
+
+// ===== Engine.gs =====
+/* Pure server engine. Loaded by Apps Script and the Node verification harness. */
+var King = typeof King === 'undefined' ? {} : King;
+King.VERSION = 1;
+King.MINUTE = 60000;
+King.DAY = 86400000;
+King.clone = function(v) { return JSON.parse(JSON.stringify(v)); };
+King.fail = function(message) { throw new Error(message); };
+King.date = function(t) { return new Date(t + 32400000).toISOString().slice(0,10); };
+King.stamp = function(t) { return new Date(t + 32400000).toISOString().slice(0,19).replace('T',' '); };
+King.day = function(a,t) { return Math.floor((Date.parse(King.date(t))-Date.parse(King.date(a.started)))/King.DAY)+1; };
+King.int = function(v,min,max) { if(!Number.isSafeInteger(v)||v<min||v>max) King.fail('유효한 정수 범위를 확인해 주세요.'); return v; };
+King.text = function(v,max) { if(typeof v!=='string'||v.length>max) King.fail('입력 길이를 확인해 주세요.'); return v.trim(); };
+King.random = function(seed) { var x=2166136261; for(var i=0;i<seed.length;i++){x^=seed.charCodeAt(i);x=Math.imul(x,16777619);} return (x>>>0)/4294967296; };
+// Mix all hash bits so adjacent minute strings do not cause sustained price drift.
+King.priceNoise = function(seed) {var x=Math.floor(King.random(seed)*4294967296);x^=x>>>16;x=Math.imul(x,0x7feb352d);x^=x>>>15;x=Math.imul(x,0x846ca68b);x^=x>>>16;return (x>>>0)/4294967296;};
+King.catalog = function(t) {
+  var rows=[
+    ['005930','삼성전자','반도체',70000],['000660','SK하이닉스','반도체',170000],
+    ['005380','현대자동차','자동차',220000],['000270','기아','자동차',100000],
+    ['051910','LG화학','에너지',300000],['006400','삼성SDI','에너지',350000],
+    ['207940','삼성바이오로직스','바이오',900000],['068270','셀트리온','바이오',180000],
+    ['035420','NAVER','디지털',200000],['035720','카카오','디지털',50000],
+    ['090430','아모레퍼시픽','소비재',130000],['097950','CJ제일제당','소비재',320000],
+    ['240810','원익IPS','반도체',35000],['058470','리노공업','반도체',200000],
+    ['067990','도이치모터스','자동차',5000],['053270','구영테크','자동차',2500],
+    ['247540','에코프로비엠','에너지',180000],['086520','에코프로','에너지',90000],
+    ['196170','알테오젠','바이오',200000],['145020','휴젤','바이오',220000],
+    ['263750','펄어비스','디지털',40000],['293490','카카오게임즈','디지털',20000],
+    ['214150','클래시스','소비재',45000],['237880','클리오','소비재',30000]
+  ];
+  var descriptions={'반도체':'반도체 설계·제조 또는 장비와 부품 사업. AI 수요, 공급 능력과 설비 비용의 영향을 받습니다.','자동차':'자동차 제조·부품 또는 유통 사업. 소비 심리, 원재료와 수출 여건의 영향을 받습니다.','에너지':'배터리·소재와 화학 관련 사업. 원자재 가격, 수요와 생산 비용의 영향을 받습니다.','바이오':'바이오 의약품 또는 의료 관련 사업. 연구 결과, 허가와 경쟁의 영향을 받습니다.','디지털':'플랫폼·콘텐츠 또는 게임 사업. 이용자 수, 광고와 콘텐츠 경쟁의 영향을 받습니다.','소비재':'식품·뷰티·소비 관련 사업. 소비 지출, 브랜드 경쟁과 해외 수요의 영향을 받습니다.'};
+  var stocks={}; rows.forEach(function(r,i){stocks[r[0]]={id:r[0],name:r[1],sector:r[2],price:r[3],base:r[3],fundamental:r[3],pressure:0,market:i<12?'KOSPI':'KOSDAQ',status:'상장',listed:King.date(t),high:r[3],low:r[3],float:10000000+i*1700000,liquidity:200000000,description:descriptions[r[2]],history:[[Math.floor(t/60000)*60000,r[3]]],financials:[{at:t,revenue:100000000000*(i+1),profit:10000000000*(i+1),debt:30000000000*(i+1)}]};});return stocks;
+};
+King.initial = function(t) {return {schema:1,revision:0,market:{minute:Math.floor(t/60000),date:King.date(t),stocks:King.catalog(t),flows:[],news:[],economy:{rate:3,inflation:2.3,activity:100},calendar:[]},accounts:{},sessions:{},quotes:{},requests:{},orders:{},receipts:{},records:{},claims:{},announcements:{},reports:{},audits:{},adminSessions:{},proxies:{},maintenance:{enabled:false,reason:'',until:''}};};
+King.log = function(s,a,type,data,t,env) {a.backupVersion=(a.backupVersion||0)+1;var id=env.id();var alertKind=King.orderAlertKind(type,data);if(alertKind)King.addAlert(a,id,alertKind,type,(s.market.stocks[data.symbol]||{}).name||'예약 상태가 변경되었습니다.',t,data.symbol);s.records[id]={id,accountId:a.id,runId:a.runId,day:King.day(a,t),at:t,time:King.stamp(t),type,data:King.clone(data)};return id;};
+King.advance = function(s,t,env) {
+  if(King.seedNews)King.seedNews(s,t,env);
+  if(!s.market.seed)s.market.seed=env.sign('market-seed:'+s.market.minute);
+  var end=Math.min(Math.floor(t/60000),s.market.minute+360),m=s.market;
+  while(m.minute<end){m.minute++;var at=m.minute*60000,date=King.date(at);
+    if(date!==m.date){Object.values(m.stocks).forEach(function(x){x.base=x.price;});m.date=date;}
+    if(King.calendar)King.calendar(s,at,env);
+    m.flows=m.flows.filter(function(f){return f.at>at-900000;});
+    Object.values(m.stocks).filter(function(x){return !x.fund&&x.status==='상장';}).forEach(function(x){
+      var net={};m.flows.filter(function(f){return f.symbol===x.id;}).forEach(function(f){net[f.accountId]=(net[f.accountId]||0)+f.amount;});
+      var target=Object.keys(net).length>=3?Math.max(-.05,Math.min(.05,Object.values(net).reduce(function(v,n){return v+Math.max(-x.liquidity*.02,Math.min(x.liquidity*.02,n));},0)/x.liquidity)):0;
+      x.pressure=x.pressure*.8+target*.2;
+      var economy=m.economy,rateSensitivity={반도체:1.2,자동차:1,에너지:1.1,바이오:1.5,디지털:1.3,소비재:.7}[x.sector]||1;
+      var common=(King.priceNoise(m.seed+':market:'+m.minute)-.5)*.003,sector=(King.priceNoise(m.seed+':'+x.sector+':'+m.minute)-.5)*.010;
+      var last=x.financials[x.financials.length-1],debtLoad=last.debt/Math.max(1,last.revenue);
+      var macro=((economy.activity-100)*.15-(economy.rate-3)*rateSensitivity*(1+debtLoad)-(economy.inflation-2.3)*.3)*.000003;
+      var shock=common+sector+(King.priceNoise(m.seed+':'+x.id+':'+m.minute)-.5)*(x.market==='KOSDAQ'?.032:.022)+macro+(x.trend||0)*.00001;
+      x.trend=(x.trend||0)*.9985;
+      // Keep the latent price near the daily band so a limit touch can reverse on later ticks.
+      x.fundamental=Math.max(Math.max(1,Math.ceil(x.base*.7)),Math.min(Math.floor(x.base*1.3),x.fundamental*(1+shock)));
+      x.price=Math.max(Math.ceil(x.base*.7),Math.min(Math.floor(x.base*1.3),Math.round(x.fundamental*(1+x.pressure))));
+      x.price=Math.max(1,x.price);x.high=Math.max(x.high,x.price);x.low=Math.min(x.low,x.price);x.history.push([at,x.price]);
+    });
+    if(King.updateFunds)King.updateFunds(s,at);
+    if(King.fillOrders)King.fillOrders(s,at,env);if(King.checkAlerts)King.checkAlerts(s,at);
+    if(m.minute%60===0) Object.values(m.stocks).forEach(function(x){x.history=x.history.filter(function(p){var age=at-p[0];return age<=7*King.DAY||age<=90*King.DAY&&p[0]%3600000===0||p[0]%(King.DAY)===0;});});
+  }
+  return m.minute===Math.floor(t/60000);
+};
+// OHLC from retained samples only; older hourly/daily samples are never expanded into invented prices.
+King.chartBars = function(points,interval) {
+  var buckets={},offset=interval===King.DAY?32400000:0;
+  points.forEach(function(p){var time=Math.floor((p[0]+offset)/interval)*interval-offset,b=buckets[time];
+    if(b){b.high=Math.max(b.high,p[1]);b.low=Math.min(b.low,p[1]);b.close=p[1];b.samples++;}
+    else buckets[time]={time:time,open:p[1],high:p[1],low:p[1],close:p[1],samples:1};
+  });return Object.keys(buckets).map(Number).sort(function(a,b){return a-b;}).slice(-48).map(function(time){return buckets[time];});
+};
+// Valuation-only callers do not need charts, news, offers or account presentation data.
+King.totalAssets = function(s,a) {
+  var securities=Object.keys(a.holdings).reduce(function(total,id){var x=s.market.stocks[id];return total+(x&&x.status!=='비상장'?x.price*a.holdings[id].quantity:0);},0);
+  var dividends=Object.values(s.claims).filter(function(c){return c.accountId===a.id&&c.runId===a.runId&&!c.reward&&c.status==='대기';}).reduce(function(total,c){return total+c.net;},0);
+  return a.cash+securities+dividends;
+};
+King.snapshot = function(s,a,t,proxy,env) {
+  King.ensureProgression(a);King.notificationSettings(a);var holdings={},stockValue=0,etfValue=0;
+  Object.keys(a.holdings).forEach(function(id){var h=King.clone(a.holdings[id]),x=s.market.stocks[id];h.price=x&&x.status!=='비상장'?x.price:0;h.value=h.price*h.quantity;h.available=h.quantity-King.lockedQuantity(s,a,id);h.profit=h.value-h.cost;h.average=h.quantity?h.cost/h.quantity:0;holdings[id]=h;if(x&&x.fund)etfValue+=h.value;else stockValue+=h.value;});
+  var claims=Object.values(s.claims).filter(function(c){return c.accountId===a.id&&c.status==='대기'&&(c.reward||c.runId===a.runId);});
+  var dividends=claims.filter(function(c){return !c.reward;}).reduce(function(v,c){return v+c.net;},0);
+  var stocks=Object.values(s.market.stocks).map(function(x){var v=King.clone(Object.assign({},x,{history:x.history.slice(-240)}));['fundamental','trend','pressure','tradeEpoch'].forEach(function(key){delete v[key];});if(env&&x.status==='상장'&&s.market.minute===Math.floor(t/60000))v.offer=King.priceOffer(a,x,t,env);v.chartBars={hour:King.chartBars(x.history,3600000),day:King.chartBars(x.history,King.DAY)};if(King.day(a,t)<2)delete v.financials;if(v.fund&&King.day(a,t)<4){delete v.fund;delete v.history;delete v.chartBars;}return v;});
+  return {revision:s.revision,serverTime:t,marketTime:s.market.minute*60000,catchingUp:s.market.minute<Math.floor(t/60000),taxPolicy:{version:'kr-2026-day3-v1',enabled:King.day(a,t)>=3,fromDay:3,stockRate:.002,etfRate:0,dividendRate:.154},achievementTargets:King.achievementTargets,day:King.day(a,t),account:{id:a.id,name:a.name,runId:a.runId,started:a.started,joined:a.joined,cash:a.cash,startingCash:a.startingCash||10000000,realized:a.realized,playSeconds:a.playSeconds,lifetimeSeconds:a.lifetimeSeconds,logins:a.logins,lastLogin:a.lastLogin,settings:a.settings,tutorial:a.tutorial,tutorialStep:a.tutorialStep,growth:King.levelInfo(a.xp),contributedCash:a.contributedCash,achievements:a.achievements,statistics:a.statistics},attendance:King.attendanceView(a,t),holdings,stocks,news:s.market.news.slice(-80).reverse().map(function(n){return King.publicNews(n,King.day(a,t));}),readNews:a.readNews,readAlerts:a.readAlerts||[],availableCash:a.cash-King.lockedCash(s,a),stockValue,etfValue,dividends,total:a.cash+stockValue+etfValue+dividends,claims,orders:Object.values(s.orders).filter(function(o){return o.accountId===a.id&&o.runId===a.runId;}).slice(-100).reverse().map(function(o){var v=King.clone(o);delete v.admin;return v;}),announcements:Object.values(s.announcements).filter(function(n){return n.status==='게시'&&(n.targets==='all'||n.targets.indexOf(a.id)>=0);}).map(function(n){return {id:n.id,title:n.title,body:n.body,at:n.at};}),economy:King.day(a,t)>=3?s.market.economy:null,assetHistory:a.assetHistory,notificationOptions:King.notificationOptions,alerts:King.notificationFeed(s,a,t,proxy),priceAlerts:a.priceAlerts||[],trades:Object.values(s.receipts).filter(function(v){return v.accountId===a.id&&v.runId===a.runId;}).slice(-100).map(function(v){return {id:v.id,symbol:v.symbol,side:v.side,quantity:v.quantity,price:v.price,at:v.at,memo:v.memo};}),admin:!!proxy||false,proxy:proxy?{name:a.name,id:a.id}:null};
+};
+King.execute = function(original,req,env) {
+  var t=env.now(),action=req.action;
+  if(req.version!==King.VERSION)King.fail('버전이 다릅니다. 새로고침 후 다시 시도해 주세요.');
+  if(action==='status')return {state:original,response:{service:'stock-king',version:1,maintenance:King.clone(original.maintenance),serverTime:t}};
+  var s=King.clone(original);
+  if(action==='signup'||action==='login')return King.login(s,req,env);
+  var auth=King.authenticate(s,req,env),a=auth.account;King.ensureProgression(a);
+  var adminAction=action.indexOf('admin')===0;
+  if(action==='logout'){if(!auth.proxy&&!env.isAdmin(a.name))King.log(s,a,'로그아웃',{},t,env);delete s.sessions[env.hash(req.token)];s.revision++;return {state:s,response:{ok:true}};}
+  if(s.maintenance.enabled&&!auth.admin&&!(action==='adminUnlock'&&env.isAdmin(auth.actor.name)&&env.adminCheck(req.secret||'')))King.fail('점검 중: '+s.maintenance.reason);
+  if(a.restricted&&(!a.restricted.until||a.restricted.until>t)&&!auth.admin)King.fail('이용 제한: '+a.restricted.reason);
+  if(action==='logout'){if(!auth.proxy&&!env.isAdmin(a.name))King.log(s,a,'로그아웃',{},t,env);delete s.sessions[env.hash(req.token)];s.revision++;return {state:s,response:{ok:true}};}
+  var ready=King.advance(s,t,env);
+  if(!ready&&action!=='sync')return {state:s,response:{error:'MARKET_CATCHUP',message:'시장을 동기화하고 있습니다. 잠시 후 다시 시도해 주세요.',remaining:Math.floor(t/60000)-s.market.minute}};
+  var reads=['friendRanking','friendMessages','supportList','supportRead','adminSupportList','adminSupportRead','friends','friendSearch','friendProfile','sync','quote','records','receipt','backup','adminOverview','adminPlayer'];
+  var mutation=reads.indexOf(action)<0;
+  if(mutation&&!adminAction&&req.runId!==a.runId)King.fail('회차가 변경되었습니다. 다시 동기화해 주세요.');
+  if(adminAction&&action!=='adminUnlock'&&(!auth.admin||auth.proxy))King.fail('관리자 인증이 필요합니다.');
+  if(King.chatActions.indexOf(action)>=0&&action!=='supportRead'&&action!=='adminSupportRead')King.chatAuthorize(s,a,auth,req);
+  var requestKey;
+  if(mutation){if(typeof req.requestId!=='string'||!/^[a-zA-Z0-9_-]{8,100}$/.test(req.requestId))King.fail('요청 식별자를 확인해 주세요.');requestKey=auth.actor.id+':'+req.requestId;var previous=s.requests[requestKey];if(previous){if(previous.action!==action||previous.accountId!==a.id)King.fail('이미 사용한 요청 식별자입니다.');var cachedResult=['friendSettings','friendRequest','friendRespond','friendRemove'].indexOf(action)>=0?King.friends(s,a,{action:'friends'},t,env,auth):previous.result;return {state:s,response:Object.assign({},cachedResult,{snapshot:King.snapshot(s,a,t,auth.proxy,env)})};}}
+  if(action==='reset'||action==='deleteAccount'){var lifecycle=King.accountLifecycle(s,a,req,t,env,auth);s.revision++;if(lifecycle.snapshot)lifecycle.snapshot.revision=s.revision;return {state:s,response:lifecycle};}
+  if(action==='backup'&&King.achievements)King.achievements(s,a,t,env);
+  var result={},proxyBefore=auth.proxy&&mutation?King.proxyState(s,a):null;
+  if(action==='sync'){if(!auth.proxy)King.activity(s,a,req,t,env);}
+  else if(King.chatActions.indexOf(action)>=0)result=King.chats(s,a,req,t,env,auth);
+  else if(adminAction)result=King.admin(s,a,auth,req,env);
+  else if(action==='quote')result=King.quote(s,a,req,t,env);
+  else if(action==='trade')result=King.trade(s,a,req,t,env,env.isAdmin(auth.actor.name));
+  else if(action==='order')result=King.order(s,a,req,t,env,env.isAdmin(auth.actor.name));
+  else if(action==='cancel')result=King.cancel(s,a,req,t,env);
+  else if(['friendRanking','friends','friendSearch','friendProfile','friendSettings','friendRequest','friendRespond','friendRemove'].indexOf(action)>=0)result=King.friends(s,a,req,t,env,auth);
+  else if(King.personal)result=King.personal(s,a,req,t,env,auth);
+  else King.fail('지원하지 않는 요청입니다.');
+  if(King.achievements)King.achievements(s,a,t,env);
+  if(auth.proxy&&mutation)King.audit(s,auth.actor,a.id,action,proxyBefore,King.proxyState(s,a),t,env,'대리 조작');
+  if(mutation&&!adminAction)a.backupVersion=(a.backupVersion||0)+1;
+  if(result.order){result.order=King.clone(result.order);delete result.order.admin;}
+  s.revision++;
+  if(mutation)s.requests[requestKey]={action,accountId:a.id,at:t,result:King.clone(result)};
+  if(action==='quote')s.quotes[result.quote.id]=result.quote;
+  Object.keys(s.quotes).forEach(function(id){if(s.quotes[id].expires<t-60000)delete s.quotes[id];});
+  if(req.lightweight===true&&['friends','friendSearch','friendProfile','friendRanking','records','friendMessages','supportList','supportRead','adminSupportList','adminSupportRead'].indexOf(action)>=0)return {state:s,response:result};
+  result.snapshot=King.snapshot(s,a,t,auth.proxy,env);result.snapshot.admin=env.isAdmin(auth.actor.name);
+  return {state:s,response:result};
+};
+
+
+// ===== Events.gs =====
+var King = typeof King === 'undefined' ? {} : King;
+King.news = function(s,x,title,fact,t,impact,env) {var id='news-'+env.hash(t+':'+title+':'+fact).slice(0,24);if(s.market.news.some(function(n){return n.id===id;}))return;s.market.news.push({id,symbol:x?x.id:null,sector:x?x.sector:'경제',title,fact,at:t,time:King.stamp(t),category:'공시',body:King.disclosureBody(x,title,fact,t),image:King.newsImageFor({id,title,sector:x?x.sector:'경제'},null,s.market.news),impact:impact||0});if(x)x.trend=impact||0;if(King.alertRisk)King.alertRisk(s,x,title,fact,t,id);if(!/거래정지|거래재개|거래 재개|상장폐지/.test(title))King.alertNews(s,s.market.news[s.market.news.length-1],t);};
+King.calendar = function(s,t,env) {
+  if(King.lifecycle)King.lifecycle(s,t,env);King.publishScheduled(s,t,env);
+  King.initFunds(s);var local=new Date(t+32400000),hour=local.getUTCHours(),minute=local.getUTCMinutes(),sunday=local.getUTCDay()===0,stocks=Object.values(s.market.stocks).filter(function(x){return x.market!=='ETF'&&x.status==='상장';});
+  if(sunday&&hour===0&&minute===0){stocks.forEach(function(x){var last=x.financials[x.financials.length-1],factor=.9+King.random(s.market.seed+':'+x.id+':report:'+t)*.2;var financial={at:t,revenue:Math.round(last.revenue*factor),profit:Math.round(last.profit*(factor*2-1)),debt:Math.round(last.debt*(1+(1-factor)/2))};x.financials.push(financial);x.financials=x.financials.slice(-12);x.dividend=financial.profit>0?Math.max(0,Math.floor(financial.profit*.1/x.float/13)):0;x.dividend=x.dividendOverride===undefined?Math.min(x.dividend,Math.floor(x.price*.002)):x.dividendOverride;King.news(s,x,x.name+' 주간 실적·배당 공시','가상 매출 '+financial.revenue+'원, 영업이익 '+financial.profit+'원. 이번 주 1주당 배당 '+x.dividend+'원. 오늘 18시 권리 확정, 19시 수령 가능.',t,0,env);});Object.values(s.market.stocks).filter(function(x){return x.fund;}).forEach(function(x){King.rebalance(s,x);});s.market.economy={rate:Math.round((2+King.random(s.market.seed+':rate'+t)*2)*100)/100,inflation:Math.round((1+King.random(s.market.seed+':inflation'+t)*3)*100)/100,activity:Math.round(95+King.random(s.market.seed+':activity'+t)*10)};}
+  if(sunday&&hour===18&&minute===0)stocks.forEach(function(x){King.makeDividend(s,x,x.dividend||0,t,t+3600000,env);});
+  s.market.calendar=s.market.calendar.filter(function(c){if(c.payAt>t)return true;if(c.type==='펀드배당'){var f=s.market.stocks[c.symbol].fund;f.receivable-=c.amount;f.cash+=c.amount;f.distributable+=c.amount;}return false;});
+  if(sunday&&hour===20&&minute===0)Object.values(s.market.stocks).filter(function(x){return x.fund;}).forEach(function(x){var f=x.fund,per=Math.max(0,Math.floor(Math.min(f.distributable,f.cash)/f.units));King.makeDividend(s,x,per,t,t+3600000,env);f.pendingDistribution=per*f.units;});
+  if(sunday&&hour===21&&minute===0)Object.values(s.market.stocks).filter(function(x){return x.fund;}).forEach(function(x){var f=x.fund,amount=f.pendingDistribution||0;f.cash-=amount;f.liability-=amount;f.distributable-=amount;f.pendingDistribution=0;});
+  Object.values(s.market.stocks).forEach(function(x){if(x.delistAt&&t>=x.delistAt&&x.status!=='비상장'){x.status='비상장';King.news(s,x,x.name+' 상장폐지','공시된 일정에 따라 상장폐지되었습니다. 일반 거래가 종료됩니다.',t,0,env);if(x.settlement!==null&&x.settlement!==undefined)Object.values(s.market.stocks).filter(function(v){return v.fund;}).forEach(function(v){var q=v.fund.positions[x.id]||0;v.fund.cash+=q*x.settlement;delete v.fund.positions[x.id];});Object.values(s.accounts).forEach(function(a){var h=a.holdings[x.id];if(!h)return;if(x.settlement!==null&&x.settlement!==undefined){var cash=h.quantity*x.settlement;a.cash+=cash;a.realized+=cash-h.cost;delete a.holdings[x.id];King.log(s,a,'상장폐지 정산',{symbol:x.id,quantity:h.quantity,amount:cash},t,env);}});}});
+};
+King.achievementTargets = {assets:[1200000,1500000,2000000,5000000,12000000,15000000,20000000,50000000,100000000,500000000,1000000000,10000000000],realized:[1000000,5000000,10000000,20000000,100000000,500000000,1000000000],shares:[10,100,1000,10000,100000],companies:[3,5,10,15,20,30],news:[10,50,100,300,1000,3000],time:[1800,7200,18000,36000,90000,180000],holding:[3,7,30,90,180,365],dates:[3,7,30,90,180,365],industries:[3,5,6],explore:[5,15,30],memos:[1,5,10]};
+King.achievements = function(s,a,t,env) {
+  var holdings=Object.values(a.holdings),total=King.totalAssets(s,a),values={assets:total,realized:a.realized,shares:holdings.reduce(function(v,h){return v+h.quantity;},0),companies:holdings.length,news:a.readNews.length,time:a.playSeconds,holding:Math.max(0,...holdings.map(function(h){return Math.floor((t-h.since)/King.DAY);})),dates:a.statistics.dates.length,industries:a.statistics.industries.length,explore:a.statistics.companies.length,memos:a.statistics.memos};
+  Object.keys(King.achievementTargets).forEach(function(kind){King.achievementTargets[kind].forEach(function(goal){var id=kind+'-'+goal;if(values[kind]>=goal&&!a.achievements[id]){a.achievements[id]={at:t,goal,kind};King.addAlert(a,'achievement-'+a.runId+'-'+id,'achievement','업적 달성','업적 메뉴에서 새 업적을 확인해 주세요.',t);King.awardXp(a,'achievement',t);King.log(s,a,'업적 달성',{id,goal,kind},t,env);}});});a.statistics.progress=values;
+  var date=King.date(t),last=a.assetHistory[a.assetHistory.length-1];if(!last||last.date!==date){a.assetHistory.push({at:t,date,total:total});King.log(s,a,'일별 자산 요약',{total:total},t,env);}else if(t-last.at>=3600000){a.assetHistory.push({at:t,date,total:total});}
+};
+
+
+// ===== Friends.gs =====
+var King = typeof King === 'undefined' ? {} : King;
+King.friendFields = ['cash','total','holdings','day','playTime','roi','level'];
+King.friendIdentity = function(a,env) {
+  if(!a.social)a.social={id:env.id(),nickname:a.name,sharing:{}};
+  King.friendFields.forEach(function(k){if(!(k in a.social.sharing))a.social.sharing[k]=true;});return a.social;
+};
+King.friendLink = function(s,a,b) {return (s.friendships||{})[[a.id,b.id].sort().join(':')];};
+King.friendView = function(s,viewer,a,t,env) {
+  var profile=King.friendIdentity(a,env),link=King.friendLink(s,viewer,a);
+  var result={friendId:profile.id,nickname:profile.nickname,relationship:link?(link.status==='accepted'?'friend':link.from===viewer.id?'sent':'received'):'none',shared:{}};
+  if(!link||link.status!=='accepted')return result;
+  var fields=profile.sharing,holdings=Object.entries(a.holdings).map(function(pair){var x=s.market.stocks[pair[0]],q=pair[1].quantity,price=x&&x.status!=='비상장'?x.price:0;return {symbol:pair[0],name:x?x.name:pair[0],quantity:q,price,value:q*price};});
+  King.ensureProgression(a);var total=a.cash+holdings.reduce(function(v,h){return v+h.value;},0)+Object.values(s.claims).filter(function(c){return c.accountId===a.id&&c.runId===a.runId&&!c.reward&&c.status==='대기';}).reduce(function(v,c){return v+c.net;},0);
+  if(fields.roi)result.shared.roi=a.contributedCash>0?(total-a.contributedCash)/a.contributedCash*100:null;
+  if(fields.level)result.shared.level=King.levelInfo(a.xp);
+  if(fields.cash)result.shared.cash=a.cash;
+  if(fields.total)result.shared.total=a.cash+holdings.reduce(function(v,h){return v+h.value;},0)+Object.values(s.claims).filter(function(c){return c.accountId===a.id&&c.runId===a.runId&&!c.reward&&c.status==='대기';}).reduce(function(v,c){return v+c.net;},0);
+  if(fields.holdings)result.shared.holdings=holdings;
+  if(fields.day)result.shared.day=King.day(a,t);
+  if(fields.playTime)result.shared.playTime=a.playSeconds;
+  return result;
+};
+King.friends = function(s,a,r,t,env,auth) {
+  if(auth.proxy)King.fail('친구 설정과 조회는 본인 계정에서 이용해 주세요.');
+  s.friendships=s.friendships||{};
+  var me=King.friendIdentity(a,env),accounts=Object.values(s.accounts);
+  if(r.action==='friendRanking'){
+    var metric=r.metric;if(['roi','total','level','playTime'].indexOf(metric)<0)King.fail('순위 기준을 선택해 주세요.');
+    var rows=accounts.filter(function(x){var link=King.friendLink(s,a,x);return x.id===a.id||link&&link.status==='accepted';}).map(function(x){
+      King.ensureProgression(x);var p=King.friendIdentity(x,env),self=x.id===a.id,shared=self?null:King.friendView(s,a,x,t,env).shared,value=null;
+      if(self){var total=King.totalAssets(s,x);value=metric==='total'?total:metric==='roi'?(x.contributedCash>0?(total-x.contributedCash)/x.contributedCash*100:null):metric==='level'?King.levelInfo(x.xp):x.playSeconds;}
+      else if(metric in shared)value=shared[metric];
+      return {friendId:p.id,nickname:p.nickname,self,value,rank:null};
+    });
+    var score=function(row){return row.value===null?null:metric==='level'?row.value.xp:row.value;};
+    rows.sort(function(x,y){var xv=score(x),yv=score(y);return xv===null?(yv===null?x.nickname.localeCompare(y.nickname):1):yv===null?-1:yv-xv||x.nickname.localeCompare(y.nickname);});
+    var previous=null,rank=0;rows.forEach(function(row,i){var value=score(row);if(value!==null){if(value!==previous)rank=i+1;row.rank=rank;previous=value;}});
+    return {metric,at:t,rows};
+  }
+  if(r.action==='friendSettings'){
+    var nickname=King.text(r.nickname,20).normalize('NFC');
+    if(!/^[가-힣a-zA-Z0-9 _-]{2,20}$/.test(nickname))King.fail('닉네임은 한글·영문·숫자 2~20자로 입력해 주세요.');
+    if(accounts.some(function(x){return x.id!==a.id&&(x.social?x.social.nickname:x.name).toLocaleLowerCase()===nickname.toLocaleLowerCase();}))King.fail('이미 사용 중인 닉네임입니다.');
+    var sharing={};King.friendFields.forEach(function(k){sharing[k]=!!(r.sharing&&r.sharing[k]===true);});
+    a.social.nickname=nickname;a.social.sharing=sharing;King.log(s,a,'친구 프로필 변경',{items:['닉네임','공개 항목']},t,env);
+  }
+  if(r.action==='friendSearch'){
+    var query=King.text(r.query,20).normalize('NFC').toLocaleLowerCase();if(query.length<2)King.fail('닉네임을 두 글자 이상 입력해 주세요.');
+    return {results:accounts.filter(function(x){return x.id!==a.id&&(x.social?x.social.nickname:x.name).toLocaleLowerCase().includes(query);}).slice(0,20).map(function(x){return King.friendView(s,a,x,t,env);})};
+  }
+  if(['friendRequest','friendRespond','friendRemove','friendProfile'].indexOf(r.action)>=0){
+    var other=accounts.find(function(x){return x.id!==a.id&&x.social&&x.social.id===r.friendId;});if(!other)King.fail('친구를 찾을 수 없습니다.');
+    var key=[a.id,other.id].sort().join(':'),link=s.friendships[key];
+    if(r.action==='friendProfile'){if(!link||link.status!=='accepted')King.fail('서로 친구가 된 후 공개 정보를 볼 수 있어요.');return {friend:King.friendView(s,a,other,t,env)};}
+    if(r.action==='friendRequest'){
+      if(link)King.fail('이미 친구이거나 요청이 진행 중입니다.');
+      if([a.id,other.id].some(function(id){return Object.values(s.friendships).filter(function(v){return v.from===id||v.to===id;}).length>=100;}))King.fail('친구 및 대기 요청은 최대 100개입니다.');
+      s.friendships[key]={from:a.id,to:other.id,status:'pending',at:t};King.addAlert(other,env.id(),'friendRequest','친구 요청 도착','친구 메뉴에서 받은 요청을 확인해 주세요.',t);King.log(s,a,'친구 요청',{nickname:other.social.nickname},t,env);
+    }
+    if(r.action==='friendRespond'){
+      if(!link||link.status!=='pending'||link.to!==a.id)King.fail('받은 친구 요청이 없습니다.');
+      if(r.accept===true){link.status='accepted';link.accepted=t;King.addAlert(other,env.id(),'friendAccepted','친구 요청 수락','친구 메뉴에서 확인해 주세요.',t);}else delete s.friendships[key];
+      King.log(s,a,r.accept===true?'친구 수락':'친구 거절',{nickname:other.social.nickname},t,env);
+    }
+    if(r.action==='friendRemove'){if(link){delete s.friendships[key];King.log(s,a,'친구 삭제·요청 취소',{nickname:other.social.nickname},t,env);}}
+  }
+  var linked=accounts.filter(function(x){return x.id!==a.id&&King.friendLink(s,a,x);});
+  return {profile:{friendId:me.id,nickname:me.nickname,sharing:me.sharing},friends:linked.map(function(x){return King.friendView(s,a,x,t,env);})};
+};
+
+
+// ===== Funds.gs =====
+var King = typeof King === 'undefined' ? {} : King;
+King.fundNAV = function(f,stocks) {return (Object.keys(f.positions).reduce(function(v,id){return v+f.positions[id]*(stocks[id].status==='비상장'?0:stocks[id].price);},0)+f.cash+f.receivable-f.liability)/f.units;};
+King.weights = function(stocks) {var free=stocks.slice(),left=1,w={};while(free.length){var cap=free.reduce(function(v,x){return v+x.float*x.price;},0),large=free.filter(function(x){return left*x.float*x.price/cap>.35;});if(!large.length){free.forEach(function(x){w[x.id]=left*x.float*x.price/cap;});break;}large.forEach(function(x){w[x.id]=.35;left-=.35;});free=free.filter(function(x){return !w[x.id];});}return w;};
+King.rebalance = function(s,x) {var f=x.fund,stocks=Object.values(s.market.stocks).filter(function(v){return v.market!=='ETF'&&v.status==='상장'&&(f.kind==='전체시장'||v.sector===f.kind);});if(stocks.length<4)return;var budget=Object.keys(f.positions).reduce(function(v,id){return v+f.positions[id]*(s.market.stocks[id].status==='비상장'?0:s.market.stocks[id].price);},0)+Math.max(0,f.cash-f.distributable),w=King.weights(stocks);f.cash-=Math.max(0,f.cash-f.distributable);f.positions={};stocks.forEach(function(v){var q=Math.floor(budget*w[v.id]/v.price);f.positions[v.id]=q;f.cash-=q*v.price;});f.cash+=budget;};
+King.initFunds = function(s) {['전체시장','반도체','소비재'].forEach(function(kind,i){var id=['ETF_ALL','ETF_CHIP','ETF_CONSUMER'][i];if(s.market.stocks[id])return;var t=s.market.minute*60000,f={kind,positions:{},cash:1000000000,receivable:0,liability:0,units:100000,distributable:0,feeCarry:0,lastFee:t};var x={id,name:'KING '+kind,sector:kind,market:'ETF',status:'상장',price:10000,base:10000,high:10000,low:10000,listed:King.date(t),description:'가상 구성자산 장부를 바탕으로 운용하는 '+kind+' ETF. 연 보수 0.2%, 주간 재조정과 분배.',fund:f,history:[[t,10000]],nav:10000,iNAV:10000,premium:0};s.market.stocks[id]=x;King.rebalance(s,x);});};
+King.fundUnits = function(f,delta,stocks) {if(!Number.isSafeInteger(delta)||f.units+delta<=0)King.fail('발행 좌수를 확인해 주세요.');var ratio=delta/f.units;Object.keys(f.positions).forEach(function(id){f.positions[id]*=1+ratio;});f.cash*=1+ratio;f.receivable*=1+ratio;f.liability*=1+ratio;f.distributable*=1+ratio;f.units+=delta;};
+King.updateFunds = function(s,t) {King.initFunds(s);Object.values(s.market.stocks).filter(function(x){return x.fund;}).forEach(function(x){var f=x.fund,value=King.fundNAV(f,s.market.stocks)*f.units;f.feeCarry+=Math.max(0,value)*.002*(t-f.lastFee)/(365*King.DAY);var fee=Math.floor(f.feeCarry);f.feeCarry-=fee;f.cash-=fee;f.lastFee=t;x.iNAV=King.fundNAV(f,s.market.stocks);var target=(King.random(x.id+':'+s.market.minute)-.5)*.002;x.premium=Math.max(-.005,Math.min(.005,(x.premium||0)*.8+target*.2));x.price=Math.max(1,Math.round(x.iNAV*(1+x.premium)));if((t+32400000)%King.DAY===0)x.nav=x.iNAV;x.high=Math.max(x.high,x.price);x.low=Math.min(x.low,x.price);x.history.push([t,x.price]);});};
+King.makeDividend = function(s,x,perShare,t,payAt,env) {
+  if(perShare>=x.price){perShare=Math.max(0,x.price-1);King.news(s,x,x.name+' 배당 감액 공시','권리 확정 시점의 주가를 반영하여 주당 '+perShare+'원으로 감액합니다.',t,0,env);}if(!perShare)return;
+  Object.values(s.accounts).forEach(function(a){var h=a.holdings[x.id];if(!h||!h.quantity)return;var gross=h.quantity*perShare,taxRate=King.day(a,payAt)>=3?.154:0,income=taxRate?Math.floor(gross*14/100):0,local=Math.floor(income/10),tax=income+local,id=env.id();s.claims[id]={id,accountId:a.id,runId:a.runId,symbol:x.id,name:x.name,quantity:h.quantity,gross,tax,taxRate,taxDetails:[{name:'배당소득세',amount:income},{name:'지방소득세',amount:local}],taxVersion:'kr-2026-day3-v1',net:gross-tax,at:t,payAt,status:'대기'};King.log(s,a,x.fund?'분배 권리 확정':'배당 권리 확정',s.claims[id],t,env);});
+  x.tradeEpoch=(x.tradeEpoch||0)+1;x.price=Math.max(1,x.price-perShare);x.base=Math.max(1,x.base-perShare);if(x.fund){x.fund.liability+=perShare*x.fund.units;}else {x.fundamental=Math.max(1,x.fundamental-perShare);Object.values(s.market.stocks).filter(function(v){return v.fund;}).forEach(function(v){var amount=(v.fund.positions[x.id]||0)*perShare;v.fund.receivable+=amount;s.market.calendar.push({id:env.id(),type:'펀드배당',symbol:v.id,amount,payAt});});}
+};
+
+
+// ===== Lifecycle.gs =====
+var King = typeof King === 'undefined' ? {} : King;
+King.lifecycle = function(s,t,env) {
+  var local=new Date(t+32400000),m=s.market,live=Object.values(m.stocks).filter(function(x){return !x.fund&&x.status!=='비상장';});
+  // A halt never consumes the promised 72 hours of trading opportunity.
+  live.forEach(function(x){if(x.delistAt&&x.status==='거래정지')x.delistAt+=60000;});
+  if(local.getUTCMinutes()!==0)return;
+  var hours=local.getUTCHours();
+  if(local.getUTCDay()===1&&hours===19&&live.length<34){
+    var pool=[['005490','POSCO홀딩스','에너지','KOSPI',350000],['012330','현대모비스','자동차','KOSPI',250000],['259960','크래프톤','디지털','KOSPI',250000],['004170','신세계','소비재','KOSPI',180000],['009150','삼성전기','반도체','KOSPI',150000],['128940','한미약품','바이오','KOSPI',280000],['039030','이오테크닉스','반도체','KOSDAQ',170000],['095340','ISC','반도체','KOSDAQ',65000],['041510','에스엠','디지털','KOSDAQ',80000],['041190','우리기술투자','디지털','KOSDAQ',7000],['214450','파마리서치','바이오','KOSDAQ',150000],['027360','아주IB투자','디지털','KOSDAQ',2500],['078340','컴투스','디지털','KOSDAQ',45000],['035900','JYP Ent.','디지털','KOSDAQ',60000],['035760','CJ ENM','소비재','KOSDAQ',70000],['000100','유한양행','바이오','KOSPI',90000]];
+    var next=pool.find(function(r){return !m.stocks[r[0]];});if(next){var x={id:next[0],name:next[1],sector:next[2],market:next[3],price:next[4],base:next[4],fundamental:next[4],pressure:0,status:'상장',listed:King.date(t),high:next[4],low:next[4],float:30000000,liquidity:200000000,description:next[2]+' 관련 기업. 수요·비용·경쟁에 따라 가상 실적과 주가가 변합니다.',history:[[t,next[4]]],financials:[{at:t,revenue:300000000000,profit:20000000000,debt:100000000000}]};m.stocks[x.id]=x;King.news(s,x,x.name+' 신규 상장','공통 시장에 신규 상장했습니다. 모든 플레이어가 같은 종목과 가격을 이용합니다.',t,0,env);}
+  }
+  if(hours===20&&live.length>30){
+    var pick=live[Math.floor(King.random(m.seed+':risk:'+King.date(t))*live.length)];
+    if(pick&&!pick.delistAt&&King.random(m.seed+':risk-roll:'+King.date(t))<.02){pick.riskStage=(pick.riskStage||0)+1;King.news(s,pick,pick.name+' 경영 위험 공시','가상 사업의 위험 단계가 '+pick.riskStage+'단계로 올라갔습니다. 중요한 위험은 해금 여부와 무관하게 공개됩니다.',t,-8,env);if(pick.riskStage>=3){pick.delistAt=t+72*3600000;pick.settlement=King.random(m.seed+':recovery:'+t)>.5?0:null;King.news(s,pick,pick.name+' 상장폐지 확정',King.stamp(pick.delistAt)+' 이후 상장폐지 예정. '+(pick.settlement===0?'회수금은 0원입니다.':'비상장 보유로 전환됩니다.'),t,0,env);}}
+  }
+};
+
+
+// ===== News.gs =====
+var King = typeof King === 'undefined' ? {} : King;
+King.newsImage=function(sector){return ({반도체:'semiconductor',자동차:'automotive',에너지:'energy',바이오:'biotech',디지털:'digital',소비재:'consumer'})[sector]||'economy';};
+King.publicNews=function(n,day){
+  var out={id:n.id,symbol:n.symbol||null,sector:n.sector||'경제',category:n.category||'공시',title:n.title,fact:n.fact,at:n.at,time:n.time,image:King.newsImageFor(n),body:Array.isArray(n.body)?n.body:[n.fact]};
+  if(day<5&&n.beginner)out.beginner=n.beginner;return out;
+};
+King.editorialNews=function(s,recipe,x,t,env,seedOnly){
+  var economy=s.market.economy,data={name:x?x.name:'시장',rate:economy.rate,beforeRate:economy.rate,activity:economy.activity,beforeActivity:economy.activity,inflation:economy.inflation};
+  if(!seedOnly&&recipe.id==='market-rate')economy.rate=Math.max(0,Math.min(12,Math.round((economy.rate+(King.random(s.market.seed+':rate-event:'+t)>.5?.25:-.25))*100)/100));
+  if(!seedOnly&&recipe.id==='market-activity')economy.activity=Math.max(85,Math.min(115,economy.activity+(King.random(s.market.seed+':activity-event:'+t)>.5?1:-1)));
+  data.rate=economy.rate;data.activity=economy.activity;
+  var fill=function(text){return text.replace(/\{(\w+)\}/g,function(_,key){return String(data[key]);});},body=recipe.body.map(fill),id=(seedOnly?'intro-v2-':'event-')+env.hash(t+':'+recipe.id+':'+(x?x.id:'market')).slice(0,24);
+  if(s.market.news.some(function(n){return n.id===id;}))return;
+  var n={id,symbol:x?x.id:null,sector:x?x.sector:'경제',category:recipe.category,title:fill(recipe.title),fact:body[0],body,beginner:recipe.beginner,image:recipe.image,at:t,time:King.stamp(t),impact:seedOnly?0:recipe.impact};
+  n.image=King.newsImageFor(n,recipe.id,s.market.news);s.market.news.push(n);if(!seedOnly&&x)x.trend=Math.max(-12,Math.min(12,(x.trend||0)+recipe.impact));
+  if(King.alertNews)King.alertNews(s,n,t);
+};
+King.seedNews=function(s,t,env){
+  var m=s.market;if(m.editorial)return;
+  m.news=m.news.filter(function(n){return !n.id.startsWith('intro-')&&!n.title.endsWith(' 사업 환경 변화');});
+  var base=m.minute*King.MINUTE;m.editorial={nextAt:base+(30+Math.floor(King.random(m.seed+':first-news')*61))*King.MINUTE,last:{},companies:{}};
+  var start=Date.parse(King.date(base)+'T00:00:00+09:00');
+  [['memory-validation','005930'],['vehicle-mix','005380'],['platform-billing','035420']].forEach(function(pair,i){var recipe=King.newsLibrary.find(function(n){return n.id===pair[0];}),x=m.stocks[pair[1]];if(x)King.editorialNews(s,recipe,x,start-(5-i)*3600000,env,true);});
+};
+King.publishScheduled=function(s,t,env){
+  var m=s.market,e=m.editorial;if(!e||t<e.nextAt)return;
+  var pool=[];King.newsLibrary.forEach(function(recipe){var stocks=recipe.symbols?recipe.symbols.map(function(id){return m.stocks[id];}).filter(function(x){return x&&x.status==='상장';}):[null];stocks.forEach(function(x){var key=recipe.id+':'+(x?x.id:'market');if(t-(e.last[key]||0)>=King.DAY&&(!x||t-(e.companies[x.id]||0)>=2*3600000))pool.push({recipe,x,key});});});
+  if(pool.length){var selected=pool[Math.floor(King.random(m.seed+':article:'+t)*pool.length)];King.editorialNews(s,selected.recipe,selected.x,t,env,false);e.last[selected.key]=t;if(selected.x)e.companies[selected.x.id]=t;}
+  e.nextAt=t+(30+Math.floor(King.random(m.seed+':news-interval:'+t)*61))*King.MINUTE;m.news=m.news.slice(-500);
+};
+King.disclosureBody=function(x,title,fact,t){
+  var name=x?x.name:'공통 시장',rows=[fact,name+' 관련 공시가 '+King.stamp(t)+'에 등록됐다.'];
+  if(x){rows.push('대상 종목은 '+x.market+'의 '+x.name+'('+x.id+')다.');
+    rows.push('발표 시점에 기록된 종목 상태는 '+x.status+'이다.');
+    if(x.delistAt)rows.push('예고된 상장폐지 시각은 '+King.stamp(x.delistAt)+'이다.');
+    if(/폐지/.test(title))rows.push(x.settlement===null||x.settlement===undefined?'현금 회수금은 확정되지 않았으며 비상장 보유 조건을 따른다.':'확정된 주당 회수금은 '+Number(x.settlement).toLocaleString('en-US')+'원이다.');
+    if(/실적/.test(title)){var f=x.financials[x.financials.length-1];rows.push('이번 공시에 반영된 매출은 '+f.revenue.toLocaleString('en-US')+'원이다.','영업이익은 '+f.profit.toLocaleString('en-US')+'원으로 기록됐다.','같은 자료의 부채는 '+f.debt.toLocaleString('en-US')+'원이다.');}
+    rows.push('발표 시점에 기록된 거래 가격은 '+x.price.toLocaleString('en-US')+'원이다.');
+    if(/배당|분배/.test(title))rows.push('지급 금액과 권리 확정 시각은 위 공시의 조건을 따른다.');
+  }
+  rows.push('이 기사는 위 시점에 확정된 발표 내용을 보존한 기록이다.','발표 후 정정된 내용이 있으면 별도의 공시에서 확인할 수 있다.','개인별 체결·보유·수령 기록은 해당 계정의 원장에 따로 저장된다.','현실 기업의 실제 공시가 아닌 게임 안의 공통 시장 사건이다.');return rows;
+};
+
+
+// ===== NewsCatalog.gs =====
+var King = typeof King === 'undefined' ? {} : King;
+// Original fictional reporting. Each scenario is restricted to compatible businesses.
+// Images are shared by sector, not generated for each publication.
+King.newsLibrary=[
+ {id:'memory-validation',symbols:['005930','000660'],category:'기업뉴스',image:'semiconductor',impact:4,beginner:'고객사가 부품을 시험한 뒤 주문을 확정하는 절차예요. 시험 물량과 실제 판매 계약은 구분해야 해요.',title:'{name}, 서버용 메모리 고객 검증 물량 출하',body:[
+  '{name}가 서버용 메모리의 고객 검증 물량을 출하했다.',
+  '이번 출하는 완제품 제조사가 성능과 전력 소모를 확인하는 평가용 물량이다.',
+  '대상 제품은 여러 작업을 동시에 처리하는 서버 환경에 맞춰 구성됐다.',
+  '회사는 기존 생산 설비에서 시험 물량을 확보했다고 설명했다.',
+  '새 공장 건설이나 생산능력 확대를 확정한 발표는 아니다.',
+  '고객 평가에는 처리 속도뿐 아니라 장시간 작동 때의 안정성도 포함된다.',
+  '시험 결과에 따라 제품 설정과 포장 방식이 달라질 수 있다.',
+  '고객사 이름과 평가 물량의 구체적인 규모는 공개하지 않았다.',
+  '대량 공급 계약의 체결 여부도 이번 발표에 포함되지 않았다.',
+  '회사는 평가 절차가 끝난 제품부터 후속 공급 협의를 진행할 예정이다.'
+ ]},
+ {id:'equipment-maintenance',symbols:['240810','058470','039030','095340','009150'],category:'기업뉴스',image:'semiconductor',impact:2,beginner:'새 제품 판매 외에도 이미 납품한 제품의 점검·교체가 사업이 될 수 있어요.',title:'{name}, 고객사 현장 점검 체계 개편',body:[
+  '{name}가 고객사 현장에 공급한 제품의 점검 체계를 개편했다.',
+  '변경된 체계는 사용 시간과 검사 결과를 함께 기록하는 방식이다.',
+  '종전에는 현장의 교체 요청이 접수된 뒤 확인하는 절차가 중심이었다.',
+  '앞으로는 점검 기록을 모아 교체 주기가 짧아진 항목을 먼저 검토한다.',
+  '고객사는 생산 일정에 맞춰 점검 시간을 선택할 수 있다.',
+  '회사는 긴급 출동에 필요한 부품과 지원 인력의 배치도 조정했다.',
+  '이번 개편에 따른 고객사의 생산 중단은 예정돼 있지 않다.',
+  '점검 서비스의 가격과 계약별 적용 범위는 별도 협의 대상이다.',
+  '회사 측은 초기에는 기존 고객사의 일부 현장부터 적용한다고 밝혔다.',
+  '신규 제품 판매와 점검 서비스의 매출은 구분해 관리한다.'
+ ]},
+ {id:'vehicle-mix',symbols:['005380','000270'],category:'기업뉴스',image:'automotive',impact:3,beginner:'판매 대수가 같아도 어떤 차종을 얼마나 판매했는지에 따라 매출과 비용이 달라져요.',title:'{name}, 주문 구성에 맞춰 생산 차종 비중 조정',body:[
+  '{name}가 최근 접수된 주문의 차종 구성에 맞춰 생산 계획을 조정했다.',
+  '조정 대상은 같은 생산 시설을 함께 사용하는 차종들이다.',
+  '회사는 주문이 쌓인 모델의 생산 순서를 앞당기는 방식이라고 설명했다.',
+  '전체 공장의 생산능력을 늘리는 증설 계획은 이번 조치에 포함되지 않았다.',
+  '차체와 내장재의 조달 순서도 변경된 계획에 맞춰 조정된다.',
+  '이미 고객에게 안내한 인도 일정은 개별 주문별로 다시 확인한다.',
+  '생산 비중이 줄어든 차종의 판매를 중단하는 것은 아니다.',
+  '공용 부품은 기존 물량을 활용하고 전용 부품은 협력사와 일정을 협의한다.',
+  '단기 작업 변경에 필요한 비용의 구체적인 규모는 공개하지 않았다.',
+  '회사는 실제 출고 자료가 집계되면 생산 조정 결과를 설명할 예정이다.'
+ ]},
+ {id:'dealer-service',symbols:['067990'],category:'기업뉴스',image:'automotive',impact:2,beginner:'자동차 유통사는 차량 판매뿐 아니라 정비·부품 서비스에서도 매출이 생겨요.',title:'{name}, 정비 예약과 부품 입고 일정 통합',body:[
+  '{name}가 정비 예약과 교체 부품의 입고 일정을 함께 확인하는 절차를 도입했다.',
+  '예약 단계에서 차량의 증상과 필요한 점검 항목을 먼저 분류한다.',
+  '부품이 필요한 작업은 재고 확인 후 방문 시간을 안내한다.',
+  '고객이 방문한 뒤 부품을 다시 주문하며 기다리는 사례를 줄이기 위한 조치다.',
+  '예약 없이 방문한 차량은 기존 접수 절차를 유지한다.',
+  '사고 수리처럼 추가 점검이 필요한 작업에는 별도 예상 시간을 적용한다.',
+  '회사는 정비 인력의 총원을 바꾸기보다 작업 순서를 조정한다고 설명했다.',
+  '예약 변경이나 취소에 관한 안내도 고객에게 함께 제공한다.',
+  '이번 조치로 실제 정비 소요 시간이 얼마나 달라졌는지는 아직 집계되지 않았다.',
+  '운영 결과는 방문 고객의 대기 시간과 재방문 기록을 기준으로 확인한다.'
+ ]},
+ {id:'materials-procurement',symbols:['051910','247540','086520','005490'],category:'기업뉴스',image:'energy',impact:-2,beginner:'원재료 계약 기간을 늘리면 공급은 안정될 수 있지만 가격이 바뀔 때 계약 조건도 중요해져요.',title:'{name}, 원재료 계약에 가격 조정 조항 반영',body:[
+  '{name}가 원재료 조달 계약의 가격 조정 조건을 재검토했다.',
+  '검토 대상은 계약 시점과 실제 인도 시점 사이의 가격 차이다.',
+  '일부 공급 계약에는 일정 기간의 가격을 평균해 적용하는 조항이 반영된다.',
+  '물량 자체를 늘리거나 줄이는 합의와는 별개의 조정이다.',
+  '회사는 단일 시점의 가격으로 비용이 집중되는 상황을 줄이려는 취지라고 설명했다.',
+  '가격이 내려가는 기간에는 조정 시점에 따라 비용 반영이 늦어질 수 있다.',
+  '기존에 확보한 재고의 평가 방식은 이번 협의로 변경되지 않는다.',
+  '거래 상대방별 조건과 적용 대상 물량은 공개하지 않았다.',
+  '모든 공급 계약이 동시에 바뀌는 것은 아니며 갱신 대상부터 검토한다.',
+  '회사는 조달 비용과 제품 판매 가격을 별도로 관리한다는 방침을 유지했다.'
+ ]},
+ {id:'battery-inspection',symbols:['006400'],category:'기업뉴스',image:'energy',impact:-3,beginner:'검사 강화에는 비용이 들지만 재작업과 불량을 줄이기 위한 목적도 함께 있어요.',title:'{name}, 배터리 출하 전 검사 항목 추가',body:[
+  '{name}가 배터리 출하 전 검사에 장시간 작동 조건을 추가했다.',
+  '검사는 제품이 반복해서 충전되고 방전되는 환경을 가정해 진행된다.',
+  '회사는 고객사의 사용 조건이 다양해진 데 따른 정기적인 절차 보완이라고 설명했다.',
+  '이미 출하된 제품의 회수나 판매 중단을 발표한 것은 아니다.',
+  '추가 검사를 위해 일부 검사 설비의 작업 순서를 조정한다.',
+  '초기에는 검사가 끝난 물량부터 고객사별 출하 일정을 확정한다.',
+  '검사 시간이 늘어나는 제품과 기존 절차를 유지하는 제품을 나눠 관리한다.',
+  '추가 비용의 규모와 고객사별 납품 수량은 공개하지 않았다.',
+  '검사 결과는 생산 조건을 조정하는 자료로도 활용된다.',
+  '회사는 제품별 실제 출하 일정이 달라질 경우 해당 고객사에 별도로 안내한다.'
+ ]},
+ {id:'bio-batch',symbols:['207940','068270'],category:'기업뉴스',image:'biotech',impact:3,beginner:'바이오 생산은 물량만 늘리는 것보다 일정한 품질을 확인하는 절차가 중요해요.',title:'{name}, 생산 기록 검토 절차 일원화',body:[
+  '{name}가 바이오 제품 생산 과정의 기록 검토 절차를 일원화했다.',
+  '원료 투입부터 보관과 출하까지 단계별 기록을 연결하는 방식이다.',
+  '이전에는 각 공정 담당자가 확인한 자료를 따로 취합했다.',
+  '새 절차에서는 기록이 빠진 항목을 다음 공정에 넘기기 전에 확인한다.',
+  '제품의 품질 기준 자체를 낮추거나 변경하는 조치는 아니다.',
+  '회사는 담당 인력을 대상으로 기록 작성과 검토 교육을 진행했다.',
+  '적용 초기에는 기존 절차와 대조하는 확인 작업을 병행한다.',
+  '신규 품목 허가나 임상시험 결과에 관한 발표는 포함되지 않았다.',
+  '검토에 걸리는 시간은 실제 생산 기록이 쌓인 뒤 비교할 예정이다.',
+  '계약별 생산 수량과 고객사 정보는 기존 비공개 범위를 유지한다.'
+ ]},
+ {id:'medical-training',symbols:['145020','214150','214450'],category:'이벤트',image:'biotech',impact:1,beginner:'제품 교육은 판매 이후의 서비스예요. 교육 참가가 곧 구매 계약 체결을 뜻하지는 않아요.',title:'{name}, 해외 유통 파트너 대상 제품 교육 진행',body:[
+  '{name}가 해외 유통 파트너를 대상으로 제품 취급 교육을 진행했다.',
+  '교육은 보관과 운송, 현장 문의 대응 등 유통 단계의 실무를 중심으로 구성됐다.',
+  '제품별 사용 조건과 주의 사항은 기존에 제공한 자료를 기준으로 설명했다.',
+  '새로운 효능이나 사용 범위를 발표하는 자리는 아니었다.',
+  '참가자는 지역별로 접수된 문의 사례를 공유했다.',
+  '회사는 반복되는 질문을 정리해 교육 자료에 반영한다.',
+  '현지 언어로 제공되는 자료의 표현도 함께 점검했다.',
+  '교육 참가 자체로 추가 구매나 독점 판매권이 부여되지는 않는다.',
+  '지역별 판매 계약과 제품 허가 절차는 별도로 진행된다.',
+  '회사는 후속 질문을 취합해 기존 파트너에게 안내 자료를 배포할 계획이다.'
+ ]},
+ {id:'research-schedule',symbols:['196170','128940','000100'],category:'기업뉴스',image:'biotech',impact:-2,beginner:'연구 일정과 약품 판매는 다른 단계예요. 중간 절차 조정만으로 개발 성공이나 실패가 확정되지는 않아요.',title:'{name}, 연구 자료 검토 일정 조정',body:[
+  '{name}가 진행 중인 연구 과제의 자료 검토 순서를 조정했다.',
+  '서로 다른 시점에 확보된 자료를 동일한 기준으로 비교하기 위한 작업이다.',
+  '검토 대상에는 실험 조건과 관찰 기간의 차이가 포함된다.',
+  '회사는 이번 조정이 연구 결과의 최종 결론을 발표하는 단계는 아니라고 설명했다.',
+  '자료를 추가로 확인해야 하는 항목은 별도 목록으로 관리한다.',
+  '연구 참여 기관과의 자료 전달 방식도 함께 점검한다.',
+  '개별 과제의 구체적인 결과 수치나 계약 상대방은 공개하지 않았다.',
+  '기존에 집행한 연구 비용을 취소하거나 환입하는 조치는 없다.',
+  '개발 단계 변경이 확정되면 정해진 공시 절차에 따라 알린다.',
+  '현재 공개된 내용은 자료 검토 과정의 운영 변경에 한정된다.'
+ ]},
+ {id:'platform-billing',symbols:['035420','035720'],category:'기업뉴스',image:'digital',impact:2,beginner:'광고가 노출된 횟수와 광고주가 실제 결제한 금액은 서로 다른 지표예요.',title:'{name}, 광고주 정산 내역 확인 기능 개편',body:[
+  '{name}가 광고주용 관리 화면의 정산 내역 확인 기능을 개편했다.',
+  '광고 집행 기간과 결제 내역을 같은 화면에서 비교할 수 있도록 구성했다.',
+  '취소나 조정이 발생한 금액은 별도 항목으로 구분한다.',
+  '광고 단가를 일괄 인상하거나 할인하는 정책은 이번 개편에 포함되지 않았다.',
+  '회사는 정산 내역을 확인하기 위한 반복 문의를 줄이려는 조치라고 설명했다.',
+  '광고주는 기존 자료를 내려받는 기능도 계속 이용할 수 있다.',
+  '사용 중인 광고 상품에 따라 표시되는 세부 항목은 다를 수 있다.',
+  '초기 적용 대상의 이용 결과를 확인한 뒤 제공 범위를 조정한다.',
+  '이번 기능 변경으로 발생한 비용은 구체적으로 공개하지 않았다.',
+  '광고 매출과 이용자 지표는 다음 정기 실적 자료에서 따로 확인할 수 있다.'
+ ]},
+ {id:'game-patch',symbols:['263750','293490','259960','078340'],category:'기업뉴스',image:'digital',impact:-1,beginner:'게임 운영에서는 신규 판매뿐 아니라 기존 이용자의 접속 안정성과 유지도 중요해요.',title:'{name}, 온라인 서비스 안정화 점검 실시',body:[
+  '{name}가 운영 중인 온라인 서비스의 안정화 점검을 실시했다.',
+  '점검은 접속이 몰리는 구간의 처리 순서와 통신 상태를 확인하는 작업이다.',
+  '회사는 이용자 문의에서 반복해 접수된 현상을 우선 검토했다.',
+  '새 콘텐츠 출시나 유료 상품 가격 변경은 이번 점검에 포함되지 않았다.',
+  '일부 항목은 시험 환경에서 먼저 적용한 뒤 실제 서비스에 반영한다.',
+  '이용자의 계정 정보와 구매 내역을 삭제하는 조치는 없다.',
+  '점검 과정에서 확인한 항목은 서비스별 공지로 안내한다.',
+  '개발 인력의 재배치 규모와 추가 운영 비용은 공개하지 않았다.',
+  '이용자 수나 매출의 변화가 이번 발표에서 확정된 것은 아니다.',
+  '회사는 수정 이후에도 동일한 현상이 재발하는지 접속 기록을 확인한다.'
+ ]},
+ {id:'retail-distribution',symbols:['090430','237880','004170'],category:'기업뉴스',image:'consumer',impact:3,beginner:'매장에 공급한 물량과 소비자에게 실제 팔린 물량을 구분해서 봐야 해요.',title:'{name}, 매장별 상품 배분 방식 조정',body:[
+  '{name}가 매장별 판매 기록을 반영해 상품 배분 방식을 조정했다.',
+  '전 매장에 비슷한 물량을 보내기보다 상품별 판매 속도를 나눠 보는 방식이다.',
+  '회사는 재고가 오래 남은 매장과 일찍 소진된 매장을 함께 확인했다.',
+  '재배분 대상은 판매 가능한 상태가 확인된 상품으로 제한한다.',
+  '소비자 판매 가격을 전면 변경하는 조치는 발표하지 않았다.',
+  '물류 이동에 따른 비용과 상품의 보관 조건을 함께 고려한다.',
+  '행사에 사용할 물량은 일반 판매용 물량과 구분해 관리한다.',
+  '매장별 구체적인 재고 수량과 판매 계약 조건은 공개하지 않았다.',
+  '배분 방식 변경이 실제 판매로 이어졌는지는 이후 집계에서 확인한다.',
+  '회사는 재고 이동 자료와 소비자 판매 자료를 별도로 기록한다.'
+ ]},
+ {id:'food-delivery',symbols:['097950'],category:'기업뉴스',image:'consumer',impact:-2,beginner:'납품 경로를 바꾸면 운송 비용뿐 아니라 신선도와 배송 시간도 함께 달라질 수 있어요.',title:'{name}, 냉장 제품 배송 경로 재편',body:[
+  '{name}가 냉장 제품의 배송 경로 일부를 재편했다.',
+  '물류 거점을 여러 번 거치는 구간을 우선 점검한 결과다.',
+  '변경 대상 구간에서는 출고 시간과 매장 도착 시간을 함께 조정한다.',
+  '제품의 보관 온도 기준은 기존 조건을 유지한다.',
+  '회사는 배송 경로를 바꾸는 초기 단계에 확인 인력을 배치했다.',
+  '기존 차량을 활용할 수 있는 구간과 별도 조정이 필요한 구간을 나눈다.',
+  '모든 지역에 같은 배송 방식을 적용하는 것은 아니다.',
+  '거리 단축에 따른 운송비 변화와 초기 전환 비용은 따로 집계한다.',
+  '제품 가격이나 공급 계약의 수량 변경은 이번 발표에 포함되지 않았다.',
+  '배송 완료 기록과 온도 관리 자료를 확인한 뒤 추가 적용 여부를 검토한다.'
+ ]},
+ {id:'market-rate',symbols:null,category:'시장뉴스',image:'economy',impact:0,beginner:'금리는 돈을 빌리는 비용과 관련돼요. 기업마다 부채와 현금 규모가 달라 영향도 같지 않아요.',title:'가상 통화정책 회의, 기준금리 {rate}% 결정',body:[
+  '가상 통화정책 회의가 이번 기준금리를 {rate}%로 결정했다.',
+  '직전 기준금리는 {beforeRate}%였다.',
+  '이번 결정은 게임의 공통 경제 지표에 반영됐다.',
+  '회의 자료에는 물가와 경기 지표가 함께 제시됐다.',
+  '현재 가상 물가 지표는 {inflation}%, 경기 지수는 {activity}다.',
+  '기업별 대출 조건이나 개별 계약 금리가 모두 동시에 바뀌는 것은 아니다.',
+  '공개 자료에는 기업의 부채 만기별 내역까지 포함되지 않았다.',
+  '다음 회의의 금리 수준을 미리 확정하는 내용도 없다.',
+  '회사는 각자의 자금 조달 조건에 따라 이자 비용을 부담한다.',
+  '이번 수치는 현실의 중앙은행 발표와 별개인 시뮬레이션 경제 기록이다.'
+ ]},
+ {id:'market-activity',symbols:null,category:'시장뉴스',image:'economy',impact:0,beginner:'경기 지수는 시장 전반의 상태를 요약한 값이에요. 개별 기업의 매출과 같은 숫자는 아니에요.',title:'가상 경기 지수 {activity}…생산·소비 지표 반영',body:[
+  '공통 시장의 가상 경기 지수가 {activity}로 집계됐다.',
+  '직전 집계치는 {beforeActivity}였다.',
+  '이 지수는 게임 안에서 생산과 소비 환경을 나타내는 공통 경제 지표다.',
+  '상장 기업 한 곳의 실적을 그대로 대입한 수치는 아니다.',
+  '이번 집계 시점의 기준금리는 {rate}%, 물가 지표는 {inflation}%다.',
+  '시장 전체 지표가 달라져도 기업별 제품과 비용 구조는 서로 다르다.',
+  '개별 기업이 체결한 계약의 금액을 이 지수에서 확인할 수는 없다.',
+  '공통 경제 화면에는 갱신된 수치가 같은 기준으로 표시된다.',
+  '이전 시점의 기사는 당시 발표 수치를 보존한다.',
+  '현실의 국가 통계나 실제 기업 매출을 인용한 자료는 아니다.'
+ ]},
+ {id:'ir-materials',symbols:['005930','000660','005380','000270','051910','006400','207940','068270','035420','035720','090430','097950'],category:'이벤트',image:'economy',impact:0,beginner:'기업 설명 자료는 이미 공개한 내용을 정리한 것일 수도 있어요. 새 공시가 있는지 구분해 보세요.',title:'{name}, 투자자 질의 답변 자료 공개',body:[
+  '{name}가 투자자에게 접수된 질문을 정리한 답변 자료를 공개했다.',
+  '자료는 기존 사업 소개와 최근 공시의 확인 방법을 중심으로 구성됐다.',
+  '매출과 영업이익을 같은 개념으로 보는 질문에는 항목의 차이를 설명했다.',
+  '회사는 발표 시점에 이미 공개된 수치만 자료에 사용했다고 밝혔다.',
+  '새로운 실적 전망치나 목표 주가를 제시하는 내용은 없다.',
+  '투자 계획에 관한 질문에는 확정된 공시와 검토 중인 사항을 구분했다.',
+  '고객사와의 비공개 계약 내용은 이번 자료에서도 제외했다.',
+  '배당 관련 질문은 주당 금액과 권리 기준시점에 관한 기존 안내를 인용했다.',
+  '자료를 열람했다는 이유로 별도의 배당이나 보상이 지급되지는 않는다.',
+  '투자자는 같은 시점의 공시 원문과 답변 자료를 함께 확인할 수 있다.'
+ ]}
+];
+
+
+// ===== NewsImages.gs =====
+var King = typeof King === 'undefined' ? {} : King;
+// User-supplied NEWS-001..100. Keep selection stable for each article, never infer price direction from art.
+King.newsImageFor=function(n,recipe,recent){
+ if(/^NEWS-(0[0-9][1-9]|0[1-9]0|100)$/.test(n.image||''))return n.image;
+ var pools={'memory-validation':[1,3,7,8,9,10],'equipment-maintenance':[4,5],'vehicle-mix':[11,17,19],'dealer-service':[14,18,20],'materials-procurement':[23,24,29],'battery-inspection':[21,22],'bio-batch':[32,34,39],'medical-training':[36,40],'research-schedule':[33,37,38],'platform-billing':[43,49],'game-patch':[42,50,51,52],'retail-distribution':[63,64,68,69],'food-delivery':[65,66],'market-rate':[72],'market-activity':[73,74,76,78,79,80],'ir-materials':[81,82,86,90]};
+ var title=n.title||'',pool=pools[recipe];
+ if(!pool){
+  var rules=[[/공급.*지연|물류.*지연/,[93]],[/배당|분배금/,[85]],[/금리|통화정책/,[72]],[/거래정지|생산.*중단/,[91]],[/상장폐지|구조.*조정/,[100]],[/신규 상장/,[84]],[/리콜|회수/,[92]],[/재고/,[94]],[/파업|정비|고장/,[95]],[/보안.*사고/,[96]],[/가격.*상승|원가.*상승/,[97]],[/규제|임상.*지연/,[98]],[/태풍|재해/,[99]],[/계약.*체결/,[83]],[/신공장|준공/,[87]],[/박람회|전시회/,[88]],[/해외.*협력/,[89]],[/실적|주주/,[81,86]],[/환율/,[75]]];
+  for(var i=0;i<rules.length;i++)if(rules[i][0].test(title)){pool=rules[i][1];break;}
+ }
+ if(!pool){var sector=n.sector||'경제';if(sector==='디지털'&&/게임|콘텐츠|공연|촬영/.test(title))sector='게임콘텐츠';var start={반도체:1,자동차:11,에너지:21,바이오:31,디지털:41,게임콘텐츠:51,소비재:61,경제:71,기업공통:81,위험공통:91}[sector]||71;pool=Array.from({length:10},function(_,i){return start+i;});}
+ // Prefer unused or least recently used art within the matching scene pool.
+ if(recent&&recent.length){var images=recent.slice(-20).map(function(v){return v.image;}),last=pool.map(function(v){return images.lastIndexOf('NEWS-'+String(v).padStart(3,'0'));}),oldest=Math.min.apply(null,last);pool=pool.filter(function(v,i){return last[i]===oldest;});}
+ var index=Math.floor(King.random('news-image:'+n.id+':'+title)*pool.length),number=pool[index];return 'NEWS-'+String(number).padStart(3,'0');
+};
+
+
+// ===== Personal.gs =====
+var King = typeof King === 'undefined' ? {} : King;
+King.backupData = function(a) {return {schema:1,accountId:a.id,runId:a.runId,version:a.backupVersion||0,startingCash:a.startingCash||10000000,cash:a.cash,holdings:a.holdings,realized:a.realized,started:a.started,playSeconds:a.playSeconds,achievements:a.achievements,statistics:a.statistics,tutorial:a.tutorial,readNews:a.readNews,assetHistory:a.assetHistory,settings:a.settings};};
+King.personal = function(s,a,r,t,env,auth) {
+  if(r.action==='readAlerts'){
+    if(!Array.isArray(r.ids)||r.ids.length>500||r.ids.some(function(id){return typeof id!=='string';}))King.fail('알림을 확인해 주세요.');
+    var allowed=King.notificationFeed(s,a,t,auth.proxy,true).map(function(n){return n.id;}),retained=King.notificationFeed(s,a,t,false,true).map(function(n){return n.id;});
+    a.readAlerts=Array.from(new Set((a.readAlerts||[]).concat(r.ids.filter(function(id){return allowed.indexOf(id)>=0;})))).filter(function(id){return retained.indexOf(id)>=0;});return {};
+  }
+  if(r.action==='attendance')return King.attend(s,a,t,env,auth);
+  if(r.action==='tutorialProgress'){if(auth.proxy)King.fail('본인 계정에서 안내를 진행해 주세요.');var step=King.int(r.step,0,8);if(step>1&&!a.attendance.firstGranted)King.fail('첫 접속 보상을 먼저 받아 주세요.');if(step>a.tutorialStep+1)King.fail('안내를 순서대로 확인해 주세요.');a.tutorialStep=Math.max(a.tutorialStep,step);return {};}
+  if(r.action==='priceAlert')return King.setPriceAlert(s,a,r,t,env);
+  if(r.action==='receipt'){var receipt=s.receipts[r.id];if(!receipt||receipt.accountId!==a.id)King.fail('영수증을 찾을 수 없습니다.');var copy=King.clone(receipt),x=s.market.stocks[receipt.symbol],h=a.holdings[receipt.symbol];copy.currentPrice=x&&x.status!=='비상장'?x.price:0;copy.currentHoldingProfit=h?copy.currentPrice*h.quantity-h.cost:null;return {receipt:copy};}
+  if(r.action==='records'){var offset=King.int(r.offset||0,0,10000000),limit=King.int(r.limit===undefined?30:r.limit,1,300);var list=Object.values(s.records).filter(function(v){return v.accountId===a.id;}).reverse();return {records:list.slice(offset,offset+limit).map(function(v){var clean=King.clone(v);delete clean.data.admin;return clean;}),next:offset+limit<list.length?offset+limit:null};}
+  if(r.action==='claim'){
+    var selected=Object.values(s.claims).filter(function(c){return c.accountId===a.id&&c.status==='대기'&&(r.claimId==='all'||r.claimId===c.id);}),claimed=[],waiting=[];
+    selected.forEach(function(c){if(!c.reward&&c.runId!==a.runId)return;if(c.payAt>t){waiting.push(c.id);return;}
+      if(c.reward&&c.reward.kind==='security'){var x=s.market.stocks[c.reward.symbol];if(!x||x.status!=='상장'||x.market==='ETF'&&King.day(a,t)<4){waiting.push(c.id);return;}var h=a.holdings[x.id]||(a.holdings[x.id]={quantity:0,cost:0,since:t});h.quantity+=c.reward.quantity;a.contributedCash+=c.reward.quantity*x.price;}
+      else if(c.reward&&c.reward.kind==='badge'){a.achievements['reward-'+c.id]={kind:'reward',title:c.reward.badge,at:t};}
+      else {a.cash+=c.net;if(c.reward&&c.reward.kind==='cash')a.contributedCash+=c.net;}
+      King.int(a.cash,0,900000000000000);c.status='수령';c.claimed=t;c.claimedRun=a.runId;claimed.push(c.id);King.log(s,a,c.reward?'보상 수령':'배당·분배 수령',c,t,env);
+    });a.backupVersion=(a.backupVersion||0)+1;return {claimed,waiting};
+  }
+  if(r.action==='settings'){
+    var input=r.settings||{};['terms','animation'].forEach(function(k){if(k in input){if(typeof input[k]!=='boolean')King.fail('설정을 확인해 주세요.');a.settings[k]=input[k];}});
+    ['bgm','sfx'].forEach(function(k){if(k in input){if(typeof input[k]!=='number'||input[k]<0||input[k]>1)King.fail('음량 범위를 확인해 주세요.');a.settings[k]=input[k];}});
+    if(input.favorites){if(!Array.isArray(input.favorites)||input.favorites.length>100||input.favorites.some(function(id){return !s.market.stocks[id];}))King.fail('관심종목을 확인해 주세요.');a.settings.favorites=Array.from(new Set(input.favorites));}
+    if(input.notifications){var n=input.notifications,current=King.notificationSettings(a);King.notificationOptions.map(function(o){return o.id;}).forEach(function(k){if(k in n){if(typeof n[k]!=='boolean')King.fail('알림 설정을 확인해 주세요.');current[k]=n[k];}});}
+    if(!auth.proxy)King.log(s,a,'설정 변경',{items:Object.keys(input).filter(function(k){return ['terms','animation','bgm','sfx','favorites','notifications'].indexOf(k)>=0;})},t,env);return {savedAt:t};
+  }
+  if(r.action==='save'){King.log(s,a,'수동 저장',{},t,env);return {savedAt:t};}
+  if(r.action==='tutorial'){if(!a.attendance.firstGranted)King.fail('첫 접속 보상을 먼저 받아 주세요.');a.tutorialStep=8;if(!a.tutorial)King.log(s,a,'튜토리얼 확인',{},t,env);a.tutorial=true;return {};}
+  if(r.action==='readNews'){if(!s.market.news.some(function(n){return n.id===r.id;}))King.fail('뉴스가 없습니다.');if(a.readNews.indexOf(r.id)<0){a.readNews.push(r.id);if(!auth.proxy)King.awardXp(a,'news',t);King.log(s,a,'뉴스 읽기',{title:s.market.news.find(function(n){return n.id===r.id;}).title},t,env);}return {};}
+  if(r.action==='explore'){var x=s.market.stocks[r.symbol];if(!x)King.fail('종목이 없습니다.');if(a.statistics.companies.indexOf(x.id)<0){a.statistics.companies.push(x.id);if(!auth.proxy)King.awardXp(a,'explore',t);}if(x.market!=='ETF'&&a.statistics.industries.indexOf(x.sector)<0)a.statistics.industries.push(x.sector);return {};}
+  if(r.action==='pin'){if(auth.proxy)King.fail('대리 화면에서 PIN 변경은 허용하지 않습니다.');if(r.pin!==a.pin||!/^\d{4}$/.test(r.newPin||''))King.fail('현재 PIN과 새 PIN을 확인해 주세요.');King.log(s,a,'비밀번호 변경',{},t,env);a.pin=r.newPin;Object.keys(s.sessions).forEach(function(k){if(s.sessions[k].accountId===a.id)delete s.sessions[k];});return {loginRequired:true};}
+  if(r.action==='backup'){var data=King.backupData(a),body=JSON.stringify(data);return {backup:{data,signature:env.sign(body)}};}
+  if(r.action==='restore'){var b=r.backup;if(!b||!b.data||b.data.schema!==1||env.sign(JSON.stringify(b.data))!==b.signature||b.data.accountId!==a.id||b.data.runId!==a.runId||b.data.version!==(a.backupVersion||0))King.fail('백업이 변조되었거나 서버 최신 상태보다 오래되었습니다.');['cash','holdings','realized','started','playSeconds','achievements','statistics','tutorial','readNews','assetHistory','settings'].forEach(function(k){a[k]=King.clone(b.data[k]);});King.log(s,a,'백업 검증 복원',{version:b.data.version},t,env);return {restored:true};}
+  if(r.action==='report'){var text=King.text(r.body,4000),email=King.text(r.email||'',200);if(!text||email&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))King.fail('내용과 이메일을 확인해 주세요.');var id=env.id();s.reports[id]={id,accountId:a.id,type:r.kind==='suggestion'?'기능 제안':r.kind==='other'?'기타':'오류 신고',body:text,email,at:t,time:King.stamp(t),status:'접수',environment:King.text(r.environment||'',300)};King.log(s,a,'문의 제출',{category:s.reports[id].type},t,env);return {reportId:id};}
+  King.fail('지원하지 않는 요청입니다.');
+};
+
+
+// ===== Progression.gs =====
+var King = typeof King === 'undefined' ? {} : King;
+King.ensureProgression = function(a) {
+  if(!a.attendance){var date=King.date(a.started);a.attendance={firstGranted:true,lastDate:date,streak:1,history:[{date,day:1,amount:a.startingCash||10000000,legacy:true}]};}
+  if(!Number.isSafeInteger(a.xp))a.xp=0;
+  if(!Number.isSafeInteger(a.tutorialStep))a.tutorialStep=a.tutorial?8:0;
+  if(!Number.isSafeInteger(a.contributedCash))a.contributedCash=a.startingCash||10000000;
+};
+King.attendanceAmount = function(day,first) {day=(day-1)%30+1;return first?1000000:day===30?3000000:day%7===0?500000:100000;};
+King.attendanceView = function(a,t) {
+  var v=a.attendance,today=King.date(t),gap=v.lastDate?(Date.parse(today)-Date.parse(v.lastDate))/King.DAY:null;
+  var claimed=gap===0,next=claimed?v.streak:gap===1?v.streak+1:1;
+  return {firstGranted:v.firstGranted,claimed,visible:v.firstGranted&&!(v.history.length===1&&claimed),streak:claimed?v.streak:gap===1?v.streak:0,nextDay:next,amount:King.attendanceAmount(next,!v.firstGranted),history:v.history.slice(-35)};
+};
+King.attend = function(s,a,t,env,auth) {
+  if(auth.proxy)King.fail('출석 보상은 본인 계정에서 받아 주세요.');
+  var view=King.attendanceView(a,t);if(view.claimed)return {amount:0,alreadyClaimed:true};
+  var amount=view.amount;a.cash=King.int(a.cash+amount,0,900000000000000);a.contributedCash+=amount;
+  a.attendance.firstGranted=true;a.attendance.lastDate=King.date(t);a.attendance.streak=view.nextDay;
+  a.attendance.history.push({date:King.date(t),day:view.nextDay,amount});a.attendance.history=a.attendance.history.slice(-90);
+  King.awardXp(a,'attendance',t);King.log(s,a,'출석 보상',{day:view.nextDay,amount},t,env);
+  var point={at:t,date:King.date(t),total:King.totalAssets(s,a)},last=a.assetHistory[a.assetHistory.length-1];
+  if(last&&last.at===t)a.assetHistory[a.assetHistory.length-1]=point;else a.assetHistory.push(point);
+  return {amount,attendanceDay:view.nextDay};
+};
+King.levelInfo = function(xp) {var level=Math.floor((1+Math.sqrt(1+xp*.08))/2),start=50*level*(level-1),next=50*level*(level+1);return {xp,level,progress:xp-start,required:next-start,next};};
+King.awardXp = function(a,kind,t) {
+  var rules={attendance:[20,1],news:[5,5],explore:[5,3],trade:[10,3],time:[10,3],achievement:[10,5]},rule=rules[kind];if(!rule)return;
+  if(!a.xpDaily||a.xpDaily.date!==King.date(t))a.xpDaily={date:King.date(t),total:0,counts:{}};
+  var daily=a.xpDaily,count=daily.counts[kind]||0;if(count>=rule[1]||daily.total>=100)return;
+  var previousLevel=King.levelInfo(a.xp||0).level,amount=Math.min(rule[0],100-daily.total);daily.counts[kind]=count+1;daily.total+=amount;a.xp=(a.xp||0)+amount;var level=King.levelInfo(a.xp).level;if(level>previousLevel)King.addAlert(a,'level-'+a.runId+'-'+level,'level','레벨 상승','Lv. '+level+'이 되었습니다.',t);
+};
+
+
+// ===== Storage.gs =====
+/* Dedicated spreadsheet; never attach to or overwrite an existing user sheet. */
+var KingStore = {};
+KingStore.encode = function(state) {
+  var json=JSON.stringify(state),parts=[];
+  for(var start=0;start<json.length;){var end=Math.min(start+30000,json.length);var code=json.charCodeAt(end-1);if(code>=0xD800&&code<=0xDBFF)end--;parts.push(json.slice(start,end));start=end;}
+  return parts;
+};
+KingStore.open = function() {
+  var id=PropertiesService.getScriptProperties().getProperty('STOCK_KING_SHEET_ID');if(!id)throw new Error('서버 초기 설정이 필요합니다.');
+  var book=SpreadsheetApp.openById(id),sheet=book.getSheetByName('서버원장');if(!sheet)throw new Error('서버원장 시트를 찾을 수 없습니다.');return {book,sheet};
+};
+KingStore.read = function(db) {
+  var count=Number(db.sheet.getRange(1,2).getValue());if(!Number.isSafeInteger(count)||count<1||count>100000)throw new Error('서버원장 검증 실패. 운영자 복구가 필요합니다.');
+  return JSON.parse(db.sheet.getRange(2,1,count,1).getValues().map(function(row){return row[0];}).join(''));
+};
+KingStore.cell = function(v) {return {userEnteredValue:typeof v==='number'?{numberValue:v}:{stringValue:String(v===undefined?'':v)}};};
+KingStore.write = function(db,state) {
+  var parts=KingStore.encode(state),requests=[],count=parts.length+1;
+  if(count>db.sheet.getMaxRows())requests.push({appendDimension:{sheetId:db.sheet.getSheetId(),dimension:'ROWS',length:count-db.sheet.getMaxRows()}});
+  var data=[{values:['스키마 1',parts.length,state.revision,King.stamp(Date.now())].map(KingStore.cell)}].concat(parts.map(function(p){return {values:[KingStore.cell(p)]};}));
+  requests.push({updateCells:{range:{sheetId:db.sheet.getSheetId(),startRowIndex:0,endRowIndex:Math.max(count,db.sheet.getLastRow()),startColumnIndex:0,endColumnIndex:4},rows:data,fields:'userEnteredValue'}});
+  var members=db.book.getSheetByName('회원정보'),users=Object.values(state.accounts),rows=[['계정번호','한글아이디','PIN 원문','가입일시','마지막 로그인','로그인 횟수','평생 플레이 초','회차 플레이 초','회차','현금','이용 제한']].concat(users.map(function(a){return [a.id,a.name,a.pin,King.stamp(a.joined),King.stamp(a.lastLogin),a.logins,a.lifetimeSeconds,a.playSeconds,a.runId,a.cash,a.restricted?a.restricted.reason:'없음'];}));
+  if(rows.length>members.getMaxRows())requests.push({appendDimension:{sheetId:members.getSheetId(),dimension:'ROWS',length:rows.length-members.getMaxRows()}});
+  requests.push({updateCells:{range:{sheetId:members.getSheetId(),startRowIndex:0,endRowIndex:Math.max(rows.length,members.getLastRow()),startColumnIndex:0,endColumnIndex:11},rows:rows.map(function(row){return {values:row.map(KingStore.cell)};}),fields:'userEnteredValue'}});
+  // One atomic Google Sheets batch: account mirror and authoritative state commit together.
+  Sheets.Spreadsheets.batchUpdate({requests},db.book.getId());
+};
+
+
+// ===== Trading.gs =====
+var King = typeof King === 'undefined' ? {} : King;
+King.costs = function(x,side,q,p,a,t) {
+ var gross=King.int(q*p,1,900000000000000),fee=Math.ceil(gross*.0005),taxDetails=[],rate=0;
+ if(side==='sell'&&x.market!=='ETF'&&a&&King.day(a,t)>=3){
+  rate=.002;
+  taxDetails=x.market==='KOSPI'?[{name:'증권거래세',rate:.0005,amount:Math.floor(gross/2000)},{name:'농어촌특별세',rate:.0015,amount:Math.floor(gross*3/2000)}]:[{name:'증권거래세',rate:.002,amount:Math.floor(gross/500)}];
+ }
+ var tax=taxDetails.reduce(function(v,x){return v+x.amount;},0);
+ return {gross,fee,feeRate:.0005,tax,taxRate:rate,taxDetails,taxName:'세금',taxVersion:'kr-2026-day3-v1',totalCost:fee+tax,net:side==='buy'?gross+fee+tax:gross-fee-tax};
+};
+King.lockedCash = function(s,a) {return Object.values(s.orders).filter(function(o){return o.accountId===a.id&&o.runId===a.runId&&o.status==='대기'&&o.kind==='limitBuy';}).reduce(function(v,o){return v+o.reserved;},0);};
+King.lockedQuantity = function(s,a,symbol) {return Object.values(s.orders).filter(function(o){return o.accountId===a.id&&o.runId===a.runId&&o.symbol===symbol&&o.status==='대기'&&o.kind!=='limitBuy';}).reduce(function(v,o){return v+o.quantity;},0);};
+King.instrument = function(s,a,id,t) {var x=s.market.stocks[id];if(!x||x.status!=='상장')King.fail('현재 거래할 수 없는 종목입니다.');if(x.market==='ETF'&&King.day(a,t)<4)King.fail('ETF는 DAY 4에 열립니다.');return x;};
+King.quote = function(s,a,r,t,env) {var x=King.instrument(s,a,r.symbol,t),q=King.int(r.quantity,1,100000000);if(['buy','sell'].indexOf(r.side)<0)King.fail('거래 방향을 확인해 주세요.');return {quote:Object.assign({id:env.id(),accountId:a.id,runId:a.runId,symbol:x.id,side:r.side,quantity:q,price:x.price,minute:s.market.minute,expires:t+20000},King.costs(x,r.side,q,x.price,a,t))};};
+King.validateSettlement = function(s,a,x,side,q,price,t) {
+  var c=King.costs(x,side,q,price,a,t),h=a.holdings[x.id];
+  if(side==='buy'){
+    if(a.cash-King.lockedCash(s,a)<c.net)King.fail('사용 가능한 현금이 부족합니다.');
+    King.int((h?h.quantity:0)+q,1,900000000000000);King.int((h?h.cost:0)+c.net,0,900000000000000);
+  }else if(!h||h.quantity-King.lockedQuantity(s,a,x.id)<q)King.fail('매도 가능한 수량이 부족합니다.');
+  King.int(a.cash+(side==='buy'?-c.net:c.net),0,900000000000000);
+};
+King.settle = function(s,a,x,side,q,price,t,env,orderId,memo,admin) {
+  King.validateSettlement(s,a,x,side,q,price,t);
+  var c=King.costs(x,side,q,price,a,t),h=a.holdings[x.id];
+  if(side==='buy'){
+    if(a.cash-King.lockedCash(s,a)<c.net)King.fail('사용 가능한 현금이 부족합니다.');a.cash-=c.net;
+    if(!h)h=a.holdings[x.id]={quantity:0,cost:0,since:t};h.quantity+=q;h.cost+=c.net;
+  }else{
+    if(!h||h.quantity-King.lockedQuantity(s,a,x.id)<q)King.fail('매도 가능한 수량이 부족합니다.');
+    var basis=q===h.quantity?h.cost:Math.floor(h.cost*q/h.quantity);h.quantity-=q;h.cost-=basis;a.cash+=c.net;c.realized=c.net-basis;a.realized+=c.realized;if(!h.quantity)delete a.holdings[x.id];
+  }
+  King.int(a.cash,0,900000000000000);
+  var id=env.id(),receipt=Object.assign({id,orderId:orderId||id,accountId:a.id,runId:a.runId,symbol:x.id,name:x.name,side,quantity:q,price,at:t,time:King.stamp(t),cashAfter:a.cash,memo:memo||'',newsIds:s.market.news.filter(function(n){return !n.symbol||n.symbol===x.id;}).slice(-4).map(function(n){return n.id;}),newsAtTrade:s.market.news.filter(function(n){return !n.symbol||n.symbol===x.id;}).slice(-4).map(function(n){return {title:n.title,fact:n.fact,at:n.at};})},c);s.receipts[id]=receipt;
+  King.log(s,a,side==='buy'?'매수':'매도',receipt,t,env);
+  if(!admin)King.awardXp(a,'trade',t);if(memo)a.statistics.memos++;
+  if(!admin&&x.market!=='ETF')s.market.flows.push({at:t,accountId:a.id,symbol:x.id,amount:(side==='buy'?1:-1)*c.gross});
+  return receipt;
+};
+King.offerSignature = function(a,x,o,env) {return env.sign(JSON.stringify(['trade-offer-v1',a.id,a.runId,x.id,x.float,x.tradeEpoch||0,o.price,o.issued,o.expires]));};
+King.priceOffer = function(a,x,t,env) {var o={price:x.price,issued:t,expires:t+20000};o.signature=King.offerSignature(a,x,o,env);return o;};
+King.trade = function(s,a,r,t,env,admin) {
+ if(r.offer){
+  var x=King.instrument(s,a,r.symbol,t),o=r.offer;
+  if(!Number.isSafeInteger(o.price)||o.price<1||!Number.isSafeInteger(o.issued)||o.issued>t||o.expires!==o.issued+20000||t>=o.expires||o.signature!==King.offerSignature(a,x,o,env))King.fail('시세 확인 시간이 지났거나 유효하지 않습니다. 최신 시세를 확인해 주세요.');
+  if(['buy','sell'].indexOf(r.side)<0)King.fail('거래 방향을 확인해 주세요.');
+  return {receipt:King.settle(s,a,x,r.side,King.int(r.quantity,1,100000000),o.price,t,env,null,King.text(r.memo||'',200),admin)};
+ }
+ var q=s.quotes[r.quoteId];if(!q||q.accountId!==a.id||q.runId!==a.runId||q.expires<=t||q.minute!==s.market.minute)King.fail('시세가 변경되거나 만료되었습니다. 다시 확인해 주세요.');var x=King.instrument(s,a,q.symbol,t);if(x.price!==q.price)King.fail('시세가 변경되었습니다.');var receipt=King.settle(s,a,x,q.side,q.quantity,q.price,t,env,null,King.text(r.memo||'',200),admin);delete s.quotes[q.id];return {receipt};
+};
+King.order = function(s,a,r,t,env,admin) {
+  var x=King.instrument(s,a,r.symbol,t),q=King.int(r.quantity,1,100000000),price=King.int(r.price,1,1000000000);
+  if(['limitBuy','limitSell','stop','oco'].indexOf(r.kind)<0)King.fail('예약 종류를 확인해 주세요.');
+  var expiry=r.expiryDays===undefined?7:r.expiryDays;if([0,1,7].indexOf(expiry)<0)King.fail('만료 기간을 확인해 주세요.');
+  var o={id:env.id(),accountId:a.id,runId:a.runId,symbol:x.id,kind:r.kind,quantity:q,price,at:t,expires:expiry?t+expiry*King.DAY:null,status:'대기',admin:!!admin};
+  if(r.kind==='oco'){o.stop=King.int(r.stop,1,price-1);}
+  if(r.kind==='limitBuy'){o.reserved=King.costs(x,'buy',q,price).net;if(a.cash-King.lockedCash(s,a)<o.reserved)King.fail('사용 가능한 현금이 부족합니다.');}
+  else if(!a.holdings[x.id]||a.holdings[x.id].quantity-King.lockedQuantity(s,a,x.id)<q)King.fail('매도 가능한 수량이 부족합니다.');
+  s.orders[o.id]=o;King.log(s,a,'예약 등록',o,t,env);return {order:o};
+};
+King.cancel = function(s,a,r,t,env) {var o=s.orders[r.orderId];if(!o||o.accountId!==a.id||o.runId!==a.runId)King.fail('주문을 찾을 수 없습니다.');if(o.status==='대기'){o.status='취소';o.closed=t;King.log(s,a,'예약 취소',o,t,env);}return {order:o};};
+King.fillOrders = function(s,t,env) {
+  Object.values(s.orders).filter(function(o){return o.status==='대기';}).sort(function(a,b){return a.at-b.at||a.id.localeCompare(b.id);}).forEach(function(o){
+    var a=s.accounts[o.accountId],x=s.market.stocks[o.symbol];
+    if(!a||a.runId!==o.runId){o.status='취소';return;}
+    if(o.expires&&t>=o.expires){o.status='만료';King.log(s,a,'예약 만료',o,t,env);return;}
+    if(!x||x.status==='비상장'){o.status='취소';King.log(s,a,'종목 상태로 예약 취소',o,t,env);return;}
+    if(t<=o.at||x.status!=='상장')return;
+    var buy=o.kind==='limitBuy',hit=buy?x.price<=o.price:o.kind==='limitSell'?x.price>=o.price:o.kind==='stop'?x.price<=o.price:x.price>=o.price||x.price<=o.stop;
+    if(!hit)return;
+    o.status='체결';o.closed=t;
+    // Release this order's reservation before applying the fill; other reservations remain.
+    try{King.validateSettlement(s,a,x,buy?'buy':'sell',o.quantity,x.price,t);}catch(error){o.status='실패';o.reason=error.message;King.log(s,a,'예약 실패',o,t,env);return;}
+    var receipt=King.settle(s,a,x,buy?'buy':'sell',o.quantity,x.price,t,env,o.id,'',o.admin);o.receiptId=receipt.id;King.log(s,a,'예약 체결',o,t,env);
+    if(o.kind==='oco'){o.filledLeg=x.price>=o.price?'익절':'손절';o.otherLeg='취소';}
+  });
+};
