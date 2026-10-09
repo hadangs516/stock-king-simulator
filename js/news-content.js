@@ -11,5 +11,6 @@ export function newsImageUrl(n,thumbnail=false){
 export function newsTitle(n){return n.title||'';}
 export function newsParagraphs(n){
  // Preserve reported facts; do not pad short legacy notices with generic lessons.
- return Array.isArray(n.body)&&n.body.length?n.body.filter(v=>typeof v==='string'):[n.fact||''];
+ const lines=Array.isArray(n.body)&&n.body.length?n.body.filter(v=>typeof v==='string'):[n.fact||''];
+ if(lines.length<5)return lines;const paragraphs=[];for(let i=0;i<lines.length;i+=3)paragraphs.push(lines.slice(i,i+3).join(' '));return paragraphs;
 }

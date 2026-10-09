@@ -1,5 +1,21 @@
 const {test}=require('node:test'),assert=require('node:assert/strict');
 const {harness,signup}=require('./helpers.cjs');
+test('optional lightweight list reads retain authentication and payload without building charts',()=>{
+ const h=harness(),r=signup(h);let calls=0;const snapshot=h.K.snapshot;h.K.snapshot=(...args)=>{calls++;return snapshot(...args);};
+ const records=h.call('records',{token:r.token,offset:0,lightweight:true});assert.equal(calls,0);assert.ok(records.records.length);assert.equal(records.snapshot,undefined);
+ assert.throws(()=>h.call('records',{token:'invalid',lightweight:true}));
+ const attendance=h.call('attendance',{token:r.token,runId:r.snapshot.account.runId,requestId:'light-claim-0001',lightweight:true});assert.ok(attendance.snapshot);assert.equal(calls,1);
+});
+test('record prefetch is bounded, paged, private and retains the default page size',()=>{
+ const h=harness(),r=signup(h),id=r.snapshot.account.id;h.s.records={};
+ for(let i=0;i<650;i++)h.s.records['own-'+i]={id:'own-'+i,accountId:id,at:h.now-i,data:{text:i,admin:'private'}};
+ h.s.records.other={id:'other',accountId:'another-account',data:{text:'private'}};
+ const read=(offset=0,limit)=>h.call('records',{token:r.token,offset,limit,lightweight:true});
+ assert.equal(read().records.length,30);assert.equal(read().next,30);
+ const first=read(0,300),second=read(first.next,300),last=read(second.next,300),all=[...first.records,...second.records,...last.records];
+ assert.equal(all.length,650);assert.equal(new Set(all.map(x=>x.id)).size,650);assert.equal(last.next,null);
+ assert.ok(all.every(x=>x.accountId===id&&!('admin' in x.data)));assert.throws(()=>read(0,301));assert.throws(()=>read(0,0));
+});
 test('snapshot bounds raw history copies while retaining old chart extremes and detached response data',()=>{
  const h=harness(),r=signup(h),a=h.s.accounts[r.snapshot.account.id],x=h.s.market.stocks['005930'];
  x.history=Array.from({length:1000},(_,i)=>[h.now-(999-i)*60000,i===0?999999:70000+i]);

@@ -46,12 +46,13 @@ King.advance = function(s,t,env) {
       var target=Object.keys(net).length>=3?Math.max(-.05,Math.min(.05,Object.values(net).reduce(function(v,n){return v+Math.max(-x.liquidity*.02,Math.min(x.liquidity*.02,n));},0)/x.liquidity)):0;
       x.pressure=x.pressure*.8+target*.2;
       var economy=m.economy,rateSensitivity={반도체:1.2,자동차:1,에너지:1.1,바이오:1.5,디지털:1.3,소비재:.7}[x.sector]||1;
-      var common=(King.priceNoise(m.seed+':market:'+m.minute)-.5)*.0015,sector=(King.priceNoise(m.seed+':'+x.sector+':'+m.minute)-.5)*.004;
+      var common=(King.priceNoise(m.seed+':market:'+m.minute)-.5)*.003,sector=(King.priceNoise(m.seed+':'+x.sector+':'+m.minute)-.5)*.010;
       var last=x.financials[x.financials.length-1],debtLoad=last.debt/Math.max(1,last.revenue);
       var macro=((economy.activity-100)*.15-(economy.rate-3)*rateSensitivity*(1+debtLoad)-(economy.inflation-2.3)*.3)*.000003;
-      var shock=common+sector+(King.priceNoise(m.seed+':'+x.id+':'+m.minute)-.5)*.008+macro+(x.trend||0)*.00001;
+      var shock=common+sector+(King.priceNoise(m.seed+':'+x.id+':'+m.minute)-.5)*(x.market==='KOSDAQ'?.032:.022)+macro+(x.trend||0)*.00001;
       x.trend=(x.trend||0)*.9985;
-      x.fundamental=Math.max(1,x.fundamental*(1+shock));
+      // Keep the latent price near the daily band so a limit touch can reverse on later ticks.
+      x.fundamental=Math.max(Math.max(1,Math.ceil(x.base*.7)),Math.min(Math.floor(x.base*1.3),x.fundamental*(1+shock)));
       x.price=Math.max(Math.ceil(x.base*.7),Math.min(Math.floor(x.base*1.3),Math.round(x.fundamental*(1+x.pressure))));
       x.price=Math.max(1,x.price);x.high=Math.max(x.high,x.price);x.low=Math.min(x.low,x.price);x.history.push([at,x.price]);
     });
@@ -125,6 +126,7 @@ King.execute = function(original,req,env) {
   if(mutation)s.requests[requestKey]={action,accountId:a.id,at:t,result:King.clone(result)};
   if(action==='quote')s.quotes[result.quote.id]=result.quote;
   Object.keys(s.quotes).forEach(function(id){if(s.quotes[id].expires<t-60000)delete s.quotes[id];});
+  if(req.lightweight===true&&['friends','friendSearch','friendProfile','friendRanking','records','friendMessages','supportList','supportRead','adminSupportList','adminSupportRead'].indexOf(action)>=0)return {state:s,response:result};
   result.snapshot=King.snapshot(s,a,t,auth.proxy,env);result.snapshot.admin=env.isAdmin(auth.actor.name);
   return {state:s,response:result};
 };

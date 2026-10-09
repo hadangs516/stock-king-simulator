@@ -14,15 +14,15 @@ export const api = {
     this.token = ''; this.adminToken = ''; this.proxyToken = '';
     for (const storage of [sessionStorage, localStorage]) { try { if (safeRead(storage) === previous) storage.removeItem(key); } catch { /* Storage may be unavailable. */ } }
   },
-  async send(action, data = {}) {
+  async send(action, data = {}, options = {}) {
     if (!navigator.onLine) throw new Error('인터넷 연결이 끊겼습니다. 연결 후 다시 시도해 주세요.');
     const controller = new AbortController(), timeout = setTimeout(() => controller.abort(), 35000);
     try {
       const response = await fetch(API_URL, {
         method: 'POST', redirect: 'follow', cache: 'no-store', credentials: 'omit',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify({ version: 1, token: this.token, adminToken: this.adminToken, proxyToken: this.proxyToken, action, ...data }),
-        signal: controller.signal
+        body: JSON.stringify({ version: 1, token: this.token, adminToken: this.adminToken, proxyToken: this.proxyToken, action, lightweight:['friends','friendSearch','friendProfile','friendRanking','records','friendMessages','supportList','supportRead','adminSupportList','adminSupportRead'].includes(action), ...data }),
+        signal: options.signal ? AbortSignal.any([controller.signal,options.signal]) : controller.signal
       });
       let result;
       try { result = await response.json(); } catch { throw new Error('게임 서버 응답을 확인할 수 없습니다. 운영자가 Apps Script 설치와 배포를 완료해야 합니다.'); }
@@ -30,6 +30,7 @@ export const api = {
       if (result.service !== 'stock-king' || result.version !== 1) throw new Error('연결된 주소가 주식왕 게임 서버가 아닙니다. 운영자가 서버 코드를 배포해야 합니다.');
       return result;
     } catch (error) {
+      if(options.signal?.aborted)throw Object.assign(new Error('화면 이동으로 조회를 종료했습니다.'),{cancelled:true});
       if (error.name === 'AbortError') throw new Error('응답 시간이 초과됐습니다. 처리 여부를 확인하려면 같은 요청으로 재시도해 주세요.');
       if (error instanceof TypeError) throw new Error('서버에 연결하지 못했습니다. 인터넷과 Apps Script 배포 권한을 확인해 주세요.');
       throw error;

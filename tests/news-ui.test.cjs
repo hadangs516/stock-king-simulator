@@ -23,7 +23,7 @@ test('news categories filter before grouping, retain legacy articles and show an
 test('news preserves authored facts, escapes articles and reuses topic pictures without requiring an image per article',async()=>{
  const {news,newsArticle}=await import('../js/views.js');const {newsParagraphs,newsTitle}=await import('../js/news-content.js');
  const h=harness(),s=signup(h).snapshot;
- for(const n of s.news){assert.ok(newsParagraphs(n,1).length>=10);assert.deepEqual(newsParagraphs(n,7).slice(0,10),newsParagraphs(n,1).slice(0,10));}
+ for(const n of s.news){assert.ok(newsParagraphs(n).length>=3);assert.ok(newsParagraphs(n).length<n.body.length);assert.equal(newsParagraphs(n).join(' '),n.body.join(' '));assert.deepEqual(newsParagraphs(n,7),newsParagraphs(n,1));}
  const n={id:'article',title:'삼성전자 사업 환경 변화',fact:'반도체 가상 수요 지표가 -3% 변했습니다.',at:h.now,sector:'반도체',impact:-3};
  const cards=news(s,[n]);assert.match(cards,/newsArticle/);assert.ok(cards.includes(n.fact));assert.equal(newsTitle(n),n.title);
  assert.deepEqual(newsParagraphs(n),[n.fact]);
