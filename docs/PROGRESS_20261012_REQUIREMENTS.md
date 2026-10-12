@@ -60,3 +60,7 @@
 - 구현 커밋 `99021b0` main push 성공. [GitHub Pages 작업 38219787409](https://github.com/hadangs516/stock-king-simulator/actions/runs/38219787409) completed / success.
 - [게임 사이트](https://hadangs516.github.io/stock-king-simulator/)의 HTML/CSS/모듈/SW/manifest/이미지/공개 안내 총 40개를 HTTP 조회하여 검증본과 모두 일치 확인. 증거: 상위 `배포자료/20261012_요구사항재검증/public-verification.json` 및 `deployment.json`.
 - 서버 배포와 실제 휴대폰 OS 검증은 위 제한대로 남는다. 기존 미커밋 사용자 파일은 이번 커밋에 포함하지 않았다.
+
+## 0.1.14 출석 원본 후속
+
+사용자가 0.1.13 출석 화면의 원본 재현 품질을 지적하여 다시 수정했다. 제목뿐 아니라 전체 원본 프레임·보상 그림·버튼 장식을 살리고 하단 설명을 제거했다. 상세 구현과 검증·배포 상태는 [REVISION_20261012_ATTENDANCE.md](REVISION_20261012_ATTENDANCE.md)를 따른다.
