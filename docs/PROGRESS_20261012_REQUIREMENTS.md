@@ -54,3 +54,9 @@
 이번 버전은 프런트 수정이며 서버 소스는 0.1.12와 동일하다. 서버 변동 폭 확대와 조회 최적화의 운영 적용은 아직 확인되지 않았다. Google 서버 소유 계정 인증/배포 연결이 없어 대신 운영 GAS 배포를 수행할 수 없다.
 
 최신 서버 통합본과 기존 서버 새 버전 업데이트 안내는 상위 `배포자료/20261009_로그인관리자/서버업데이트/`와 [휴대폰·PC 안내](https://hadangs516.github.io/stock-king-simulator/review/setup.html)에 있다. `setupStockKing` 실행·데이터 초기화 금지. 사용자 삭제 기획기록·미커밋 V0_UI_GUIDE·비공개 자료를 보존했다. 신규 뉴스 이미지/효과음은 생성하지 않았다.
+
+## 프런트 배포 완료
+
+- 구현 커밋 `99021b0` main push 성공. [GitHub Pages 작업 38219787409](https://github.com/hadangs516/stock-king-simulator/actions/runs/38219787409) completed / success.
+- [게임 사이트](https://hadangs516.github.io/stock-king-simulator/)의 HTML/CSS/모듈/SW/manifest/이미지/공개 안내 총 40개를 HTTP 조회하여 검증본과 모두 일치 확인. 증거: 상위 `배포자료/20261012_요구사항재검증/public-verification.json` 및 `deployment.json`.
+- 서버 배포와 실제 휴대폰 OS 검증은 위 제한대로 남는다. 기존 미커밋 사용자 파일은 이번 커밋에 포함하지 않았다.
