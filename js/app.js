@@ -1,4 +1,5 @@
-import {navIcon} from './nav-icons.js';
+import {navIcon,NAV_TABS} from './nav-icons.js';
+import {loadingTips} from './loading-tips.js';
 import {terms,termExample,glossaryPage} from './glossary.js';
 import {api} from './api.js';
 import {VERSION} from './config.js';
@@ -49,10 +50,10 @@ function renderAfterPreference(){document.querySelectorAll('#settings-form input
 function localAction(action,data,patch){optimistic.enqueue(action,{...data,runId:snapshot.account.runId,requestId:crypto.randomUUID()},patch);}
 function loginVolume(){try{const value=Number(preferenceStorage?.getItem('king-login-bgm'));return preferenceStorage?.getItem('king-login-bgm')!==null&&Number.isFinite(value)?Math.max(0,Math.min(1,value)):.3;}catch{return .3;}}
 function savePreferences(settings){
- if('bgm' in settings){try{preferenceStorage?.setItem('king-login-bgm',String(settings.bgm));}catch{}}
+ if('bgm' in settings&&!snapshot.proxy){try{preferenceStorage?.setItem('king-login-bgm',String(settings.bgm));}catch{}}
  const local={},server={};for(const [key,value] of Object.entries(settings))(['bgm','sfx','terms','animation'].includes(key)?local:server)[key]=value;
- if(Object.keys(local).length){Object.assign(snapshot.account.settings,browserPreferences.write(snapshot.account.id,local,snapshot.account.settings));sound.settings(snapshot.account.settings);const output=document.querySelector('#settings-form output');if(output)output.textContent=Math.round(snapshot.account.settings.bgm*100)+'%';}
- Object.assign(server,local);if(Object.keys(server).length)durable.enqueue('settings',{settings:server,runId:snapshot.account.runId,requestId:crypto.randomUUID()});
+  if(Object.keys(local).length){Object.assign(snapshot.account.settings,snapshot.proxy?local:browserPreferences.write(snapshot.account.id,local,snapshot.account.settings));sound.settings(snapshot.account.settings);const output=document.querySelector('#settings-form output');if(output)output.textContent=Math.round(snapshot.account.settings.bgm*100)+'%';}
+ Object.assign(server,local);if(Object.keys(server).length){if(snapshot.proxy)localAction('settings',{settings:server},s=>Object.assign(s.account.settings,server));else durable.enqueue('settings',{settings:server,runId:snapshot.account.runId,requestId:crypto.randomUUID()});}
 }
 function toast(text){clearTimeout(toastTimer);$('#toast').textContent=text;$('#toast').hidden=false;toastAt=Date.now();toastTimer=setTimeout(()=>$('#toast').hidden=true,4000);}
 function celebrate(achievement,count){
@@ -84,7 +85,6 @@ async function request(action,data={},background=false){
 }
 async function sendChat(action,data){if(action==='supportCreate')return mutate(action,data);const owner=cacheOwner(),r=await request(action,{runId:snapshot.account.runId,requestId:data.requestId||crypto.randomUUID(),...data},true);if(owner===cacheOwner()&&r.snapshot)apply(r.snapshot);return r;}
 let bootTimer, bootRefresh,tipTimer;
-const loadingTips=['주식 용어 사전에서 모르는 용어를 찾아볼 수 있습니다.','친구와 함께 플레이해 보세요!','좋은 아이디어를 제안해 보세요. 채택되면 보상받을 수 있습니다!'];
 function startLoading(stage){
  lastMainMarkup=null;
  document.body.classList.add('is-auth');connection('');
@@ -100,7 +100,7 @@ function updateSearch(){const current=$('#market-results');if(!current)return;co
 function reduced(){return snapshot?.account.settings.animation===false||matchMedia('(prefers-reduced-motion: reduce)').matches;}
 function apply(s,fromServer=true){
  if(!s)return;if(confirmedSnapshot&&s.revision<confirmedSnapshot.revision)return;confirmedSnapshot=s;s=durable.project(optimistic.project(s),s.proxy?'':s.account.id+'|'+s.account.runId);
- Object.assign(s.account.settings,browserPreferences.read(s.account.id,s.account.settings));
+ if(!s.proxy)Object.assign(s.account.settings,fromServer?browserPreferences.reconcile(s.account.id,s.account.settings):browserPreferences.read(s.account.id,s.account.settings));
  if(friendsUI.owner!==s.account.id+'|'+api.token+'|'+api.proxyToken){friendsUI.owner=s.account.id+'|'+api.token+'|'+api.proxyToken;friendsUI.data=null;friendsUI.results=[];records=[];recordOffset=0;}
  const previous=snapshot;totalChanged=!!previous&&previous.total!==s.total;changedOrders=new Set(previous?s.orders.filter(o=>o.status==='체결'&&previous.orders.some(p=>p.id===o.id&&p.status==='대기')).map(o=>o.id):[]);snapshot=s;document.body.classList.remove('is-auth');document.body.classList.toggle('is-proxy',!!s.proxy);if(fromServer)receivedAt=Date.now();document.body.classList.toggle('no-motion',!s.account.settings.animation);sound.settings(s.account.settings);
  if(!previous){try{const saved=JSON.parse(sessionStorage.getItem(pendingKey)||'null');if(saved&&saved.accountId===s.account.id)pending={action:saved.action,data:saved.data};}catch{}}
@@ -130,7 +130,7 @@ async function sync(renderAfter=true){
  syncing=(async()=>{try{const result=await request('sync',{active:document.hasFocus()&&Date.now()-lastInput<300000});apply(result.snapshot);if(renderAfter&&!modal.open&&!['INPUT','TEXTAREA','SELECT'].includes(document.activeElement?.tagName)&&!['admin','market'].includes(page))render();if(page==='market')refreshMarketPrices();if(snapshot?.catchingUp)setTimeout(()=>sync(),1500);}
  catch(error){if(!error.loginRequired)connection(error.message);}finally{syncing=null;}})();return syncing;
 }
-function nav(){const selected=({detail:'market',orders:'market',newsDetail:'news',total:'assets',records:'settings',terms:'settings',notifications:'settings',support:'settings',updates:'settings',friends:'home',rewards:'home',achievements:'home',attendance:'home'})[page]||page;if($('#nav').dataset.selected===selected)return;$('#nav').dataset.selected=selected;const tabs=[['home','홈'],['news','뉴스'],['market','거래소'],['assets','내 자산'],['settings','설정']];$('#nav').innerHTML=tabs.map(([id,name])=>`<button type="button" data-page="${id}" class="${selected===id?'active':''}" ${selected===id?'aria-current="page"':''}>${navIcon(id)}<span>${name}</span></button>`).join('');}
+function nav(){const selected=({detail:'market',orders:'market',newsDetail:'news',total:'assets',records:'settings',terms:'settings',notifications:'settings',support:'settings',updates:'settings',friends:'home',rewards:'home',achievements:'home',attendance:'home',admin:'settings'})[page]||page;const unread=!!snapshot?.news?.some(n=>!snapshot.readNews.includes(n.id));if($('#nav').dataset.selected===selected&&$('#nav').dataset.unread===String(unread))return;$('#nav').dataset.selected=selected;$('#nav').dataset.unread=String(unread);$('#nav').innerHTML=NAV_TABS.map(([id,name])=>`<button type="button" data-page="${id}" class="${selected===id?'active':''}" ${selected===id?'aria-current="page"':''}><span class="nav-symbol">${navIcon(id,selected===id)}${id==='news'&&unread?'<i class="nav-unread" aria-hidden="true"></i>':''}</span><span>${name}</span>${id==='news'&&unread?'<span class="sr-label">읽지 않은 뉴스 있음</span>':''}</button>`).join('');}
 function render(){
  if(!snapshot)return renderLogin(serverStatus);if(page==='newsDetail'&&!article)page='news';if(page==='detail'&&!snapshot.stocks.some(x=>x.id===symbol))page='market';nav();const s=snapshot;
  main.dataset.page=page;const content={newsDetail:()=>view.newsArticle(s,article),friends:()=>friendsUI.view(),home:()=>view.home(s,period),market:()=>view.market(s,filter),news:()=>view.news(s,s.news,true,newsCategory),assets:()=>view.assets(s,period),settings:()=>view.settings(s),total:()=>view.total(s),orders:()=>view.orders(s,orderTab),inbox:()=>view.inbox(s,inboxTab),rewards:()=>view.rewards(s,rewardTab),achievements:()=>view.achievements(s),detail:()=>view.detail(s,s.stocks.find(x=>x.id===symbol),chartPeriod),economy:()=>economy(),records:()=>recordsView(),terms:()=>glossaryPage(s)};
@@ -153,7 +153,7 @@ function confirmLoginReplacement(){
 function renderLogin(message=''){leaveScreen();sound.settings({bgm:loginVolume()});sound.activate();lastMainMarkup=null;finishLoading();document.body.classList.add('is-auth');cancelAnimationFrame(animationFrame);$('#ticker').hidden=true;$('#nav').hidden=true;$('#proxy-banner').hidden=true;main.innerHTML=view.loginView(authMode,message);}
 function refreshMarketPrices(){updateSearch();}
 async function navigate(next,id){
- if(!snapshot)return;if(page==='chat')chats.rememberDraft();leaveScreen();const order=['home','news','market','assets','settings'],direction=order.indexOf(next)>=order.indexOf(page)?1:-1;main.style.setProperty('--page-direction',direction);page=next;if(id)symbol=id;location.hash=next+(next==='detail'?'/'+symbol:'');modal.close();render();main.classList.remove('page-in');void main.offsetWidth;main.classList.add('page-in');window.scrollTo({top:0,behavior:'instant'});
+ if(!snapshot)return;if(page==='chat')chats.rememberDraft();leaveScreen();const order=NAV_TABS.map(([id])=>id),direction=order.indexOf(next)>=order.indexOf(page)?1:-1;main.style.setProperty('--page-direction',direction);page=next;if(id)symbol=id;location.hash=next+(next==='detail'?'/'+symbol:'');modal.close();render();main.classList.remove('page-in');void main.offsetWidth;main.classList.add('page-in');window.scrollTo({top:0,behavior:'instant'});
  if(next==='total'){animateTotal();void sync(false).then(()=>{if(page==='total'&&snapshot){render();animateTotal();}});}
  if(next==='friends')await friendsUI.load();
  if(next==='records'){const cached=browserCache.read(cacheOwner(),'records');records=cached?.records||[];recordOffset=cached?.next??0;render();await loadRecords(true);}

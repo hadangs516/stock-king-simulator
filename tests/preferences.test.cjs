@@ -1,4 +1,16 @@
 const {test}=require('node:test');const assert=require('node:assert/strict');
+test('confirmed server settings update an older browser preference cache without copying permissions',async()=>{
+ const {BrowserPreferences}=await import('../js/preferences.js'),saved=new Map(),storage={getItem:k=>saved.get(k),setItem:(k,v)=>saved.set(k,v)};
+ const p=new BrowserPreferences(storage);p.write('a',{bgm:.1,terms:false});
+ assert.deepEqual(p.reconcile('a',{bgm:.7,sfx:.2,terms:true,admin:true}),{bgm:.7,sfx:.2,terms:true,animation:true});
+ assert.equal(new BrowserPreferences(storage).read('a').bgm,.7);assert.equal(new BrowserPreferences(storage).read('a').terms,true);assert.ok(![...saved.values()][0].includes('admin'));
+});
+test('pending local preferences still win when reconciling a server snapshot',async()=>{
+ const {BrowserPreferences}=await import('../js/preferences.js'),{BrowserCache,DurableActions}=await import('../js/browser-state.js');
+ const cache=new BrowserCache(),owner='a|run';cache.write(owner,'outbox',[{action:'settings',data:{runId:'run',requestId:'pending',settings:{terms:false,bgm:.6}}}]);
+ const q=new DurableActions({cache,owner:()=>owner}),projected=q.project({account:{runId:'run',settings:{terms:true,bgm:0,sfx:.3}},readAlerts:[]});
+ const actual=new BrowserPreferences().reconcile('a',projected.account.settings);assert.equal(actual.terms,false);assert.equal(actual.bgm,.6);
+});
 test('browser preferences survive reload per account without storing server permissions',async()=>{
  const {BrowserPreferences}=await import('../js/preferences.js');const data=new Map(),storage={getItem:k=>data.get(k),setItem:(k,v)=>data.set(k,v),removeItem:k=>data.delete(k)};
  const p=new BrowserPreferences(storage);p.write('a',{bgm:.4,sfx:0,terms:false,animation:false,favorites:['005930'],notifications:{orders:false}});

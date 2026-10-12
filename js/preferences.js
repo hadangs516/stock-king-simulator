@@ -13,5 +13,7 @@ export class BrowserPreferences {
   return {...this.memory.get(id),animation:true};
  }
  write(id,patch,legacy={}){const value={...this.read(id,legacy),...clean(patch)};delete value.animation;this.memory.set(id,value);try{this.storage?.setItem(this.key(id),JSON.stringify(value));}catch{}return {...value,animation:true};}
+ // Call after pending local changes have been projected over the server settings.
+ reconcile(id,settings){return this.write(id,clean(settings),settings);}
  remove(id){this.memory.delete(id);try{this.storage?.removeItem(this.key(id));}catch{}}
 }

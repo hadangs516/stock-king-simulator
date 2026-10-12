@@ -1,9 +1,15 @@
-// Complete vector silhouettes: no bitmap background or partially cropped edges.
+// One complete silhouette per icon; gradients/bevels preserve the supplied metallic style.
+export const NAV_TABS=[['home','홈'],['market','거래소'],['assets','내 자산'],['news','뉴스'],['settings','설정']];
+const gear=Array.from({length:8},(_,i)=>Array.from({length:6},(_,j)=>{const a=(i+j/6)*Math.PI/4-Math.PI/2,r=[20,20,25,25,20,20][j];return [32+Math.cos(a)*r,32+Math.sin(a)*r];})).flat().map((p,i)=>(i?'L':'M')+p.map(n=>n.toFixed(2)).join(' ')).join(' ')+'Z';
 const shapes={
- home:'<path d="M3 12 16 2l13 10-3 4-2-2v15H8V14l-2 2Z"/><path class="nav-icon-cut" d="M13 29V18h6v11"/>',
- news:'<path d="M5 3h23v26H5Z"/><path class="nav-icon-cut" d="M10 8h13M10 13h13M10 18h5M10 23h13M20 17h3v3h-3Z"/>',
- market:'<path d="M4 17h6v12H4ZM13 9h6v20h-6ZM22 3h6v26h-6Z"/>',
- assets:'<path d="M4 7 25 3v5H4ZM4 8h24v21H4Z"/><path class="nav-icon-cut" d="M21 15h8v9h-8Z"/><circle class="nav-icon-cut" cx="24.5" cy="19.5" r="1"/>',
- settings:'<path d="m13 2 6 0 1 4 3 2 4-1 3 5-3 3v3l3 3-3 5-4-1-3 2-1 4h-6l-1-4-3-2-4 1-3-5 3-3v-3l-3-3 3-5 4 1 3-2Z"/><circle class="nav-icon-cut" cx="16" cy="16" r="5"/>'
+ home:'<path class="nav-body" d="M8 29 32 8l24 21-4 5-3-3v24H15V31l-3 3Z"/><path class="nav-highlight" d="m12 28 20-17 20 17M17 34v18"/><path class="nav-door" d="M27 55V38h10v17Z"/>',
+ market:'<rect class="nav-body" x="8" y="32" width="12" height="23" rx="3"/><rect class="nav-body" x="26" y="19" width="12" height="36" rx="3"/><rect class="nav-body" x="44" y="7" width="12" height="48" rx="3"/><path class="nav-highlight" d="M11 35v16M29 22v29M47 10v41"/>',
+ assets:'<path class="nav-body" d="m17 17 28-10 6 13H17Z"/><path class="nav-highlight" d="m21 16 22-7"/><rect class="nav-body" x="9" y="18" width="45" height="37" rx="7"/><path class="nav-highlight" d="M14 22h35M12 28v17"/><path class="nav-pocket" d="M44 33h12v14H44a7 7 0 0 1 0-14Z"/><circle class="nav-hole" cx="47" cy="40" r="2.6"/>',
+ news:'<rect class="nav-body" x="12" y="8" width="41" height="48" rx="5"/><path class="nav-highlight" d="M17 11h31M15 18v30"/><rect class="nav-hole" x="18" y="16" width="12" height="12" rx="1"/><path class="nav-lines" d="M35 17h11M35 25h11M19 35h27M19 43h27M19 50h18"/>',
+ settings:`<path class="nav-body" d="${gear}"/><path class="nav-highlight" d="M13 31a19 19 0 0 1 23-18"/><circle class="nav-hole" cx="32" cy="32" r="10"/>`
 };
-export function navIcon(name){return `<svg class="nav-icon" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="nav-metal-${name}" x2=".25" y2="1"><stop stop-color="#f7fff2"/><stop offset=".45" stop-color="#c2d1bd"/><stop offset="1" stop-color="#809980"/></linearGradient></defs><g fill="url(#nav-metal-${name})">${shapes[name]||shapes.home}</g></svg>`;}
+export function navIcon(name,active=false){
+ const mode=active?(name==='home'?'gold':'ink'):'silver',key='nav-'+name,stops=mode==='gold'?['#fff9b5','#fff02c','#ffbc0c','#ffd829']:mode==='ink'?['#36401b','#222a10','#121907','#283210']:['#f7f8f2','#c6cbc4','#7c847a','#afb7aa'];
+ const edge=mode==='gold'?'#a65b00':mode==='ink'?'#202603':'#727c6e',hole=active?'#ffed37':'#102716',highlight=mode==='ink'?'#65702a':'#ffffff',door=mode==='gold'?'#c98a06':hole;
+ return `<svg class="nav-icon nav-icon-${mode}" viewBox="0 0 64 64" aria-hidden="true"><defs><linearGradient id="${key}" x1="0" y1="0" x2=".2" y2="1">${stops.map((color,i)=>`<stop offset="${[0,.32,.77,1][i]}" stop-color="${color}"/>`).join('')}</linearGradient></defs><g fill="url(#${key})" stroke="${edge}" stroke-width="${mode==='gold'?2.4:1.3}" stroke-linejoin="round">${shapes[name]||shapes.home}</g></svg>`.replaceAll('class="nav-body"',`class="nav-body" fill="url(#${key})"`).replaceAll('class="nav-pocket"',`class="nav-pocket" fill="url(#${key})"`).replaceAll('class="nav-hole"',`class="nav-hole" fill="${hole}" stroke="none"`).replaceAll('class="nav-door"',`class="nav-door" fill="${door}"`).replaceAll('class="nav-lines"',`class="nav-lines" fill="none" stroke="${hole}" stroke-width="3" stroke-linecap="round"`).replaceAll('class="nav-highlight"',`class="nav-highlight" fill="none" stroke="${highlight}" stroke-width="1.3" stroke-linecap="round" opacity=".65"`);
+}
