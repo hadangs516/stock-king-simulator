@@ -19,3 +19,10 @@
 - 사용자 삭제 기획기록·미커밋 V0_UI_GUIDE·비공개 자료를 보존한다. 운영 로그인·초기화·서버 설정 변경 없음.
 
 배포 완료 상태는 아래에 기록한다.
+
+
+## 프런트 배포 완료
+
+- 구현 ed06b6a main push 성공. GitHub Pages38222514120 completed/success.
+- 공개 https://hadangs516.github.io/stock-king-simulator/ 파일45개 HTTP 조회 및 로컬 검증본 모두 일치. 출석 원본 전체 그림·새 보상 그림4종·수정 코드 포함. 증거: 상위 배포자료/20261012_출석원본수정/public-verification.json.
+- 서버 업데이트 없이 적용되는 프런트 수정이다. 기존 사용자 미커밋 자료는 커밋에서 제외했다.
