@@ -15,20 +15,26 @@ function rateLimit_(r,env) {
   if(attempts>=8)throw new Error('인증 시도가 많습니다. 15분 후 다시 시도해 주세요.');cache.put(key,String(attempts+1),900);
 }
 function doPost(e) {
-  var lock=LockService.getScriptLock(),committing=false;
+  var lock=LockService.getScriptLock(),committing=false,storing=false;
   try {
     if(!e||!e.postData||e.postData.contents.length>600000)throw new Error('요청 크기를 확인해 주세요.');
     var r=JSON.parse(e.postData.contents);if(!r||typeof r.action!=='string')throw new Error('요청 형식을 확인해 주세요.');
     if(!lock.tryLock(15000))return json_({error:'BUSY',message:'다른 요청 처리 중입니다. 같은 요청으로 다시 시도해 주세요.'});
     var env=kingEnv_();rateLimit_(r,env);var db=KingStore.open(),state=KingStore.read(db),out=King.execute(state,r,env);
-    if(out.state!==state){committing=true;KingStore.write(db,out.state);}
+    if(out.state!==state){storing=true;KingStore.write(db,out.state,function(){committing=true;});}
     return json_(Object.assign({service:'stock-king',version:1},out.response));
   }catch(error){
     // Never serialize request bodies, PINs or provider stack traces to the caller.
-    if(committing)try{PropertiesService.getScriptProperties().setProperty('LAST_STORAGE_ERROR_AT',King.stamp(Date.now()));}catch(ignored){}
+    var storageCode=storing?KingStore.failureCode(error):null;
+    if(storing){
+      try{var properties=PropertiesService.getScriptProperties();properties.setProperty('LAST_STORAGE_ERROR_AT',King.stamp(Date.now()));properties.setProperty('LAST_STORAGE_ERROR_CODE',storageCode);properties.setProperty('LAST_STORAGE_ERROR_PHASE',committing?'COMMIT':'PREPARE');}catch(ignored){}
+      console.error(JSON.stringify({event:'STORAGE_FAILURE',phase:committing?'COMMIT':'PREPARE',code:storageCode}));
+    }
     var message=String(error.message||'요청 처리 실패');
     if(/quota|Service|Exception|Sheets|Spreadsheet|JSON|TypeError|ReferenceError|property|undefined/i.test(message))message='서버 처리 또는 저장에 실패했습니다. 같은 요청으로 재시도해 주세요.';
-    return json_({error:committing?'COMMIT_UNKNOWN':'REQUEST_FAILED',message:committing?'저장 결과를 확인하지 못했습니다. 같은 요청으로 재시도해 주세요.':message});
+    var response={error:committing?'COMMIT_UNKNOWN':'REQUEST_FAILED',message:committing?'저장 결과를 확인하지 못했습니다. 같은 요청으로 재시도해 주세요.':storing?KingStore.failureMessage(storageCode):message};
+    if(storageCode)response.storageCode=storageCode;
+    return json_(response);
   }finally{if(lock.hasLock())lock.releaseLock();}
 }
 function setupStockKing() {

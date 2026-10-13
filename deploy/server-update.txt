@@ -1,4 +1,4 @@
-// 주식왕 시뮬레이션 0.1.12 — 아래 전체 내용을 Apps Script Code.gs에 붙여넣으세요.
+// 주식왕 시뮬레이션 0.1.15 — 아래 전체 내용을 Apps Script Code.gs에 붙여넣으세요.
 
 // ===== AccountLifecycle.gs =====
 var King = typeof King === 'undefined' ? {} : King;
@@ -282,20 +282,26 @@ function rateLimit_(r,env) {
   if(attempts>=8)throw new Error('인증 시도가 많습니다. 15분 후 다시 시도해 주세요.');cache.put(key,String(attempts+1),900);
 }
 function doPost(e) {
-  var lock=LockService.getScriptLock(),committing=false;
+  var lock=LockService.getScriptLock(),committing=false,storing=false;
   try {
     if(!e||!e.postData||e.postData.contents.length>600000)throw new Error('요청 크기를 확인해 주세요.');
     var r=JSON.parse(e.postData.contents);if(!r||typeof r.action!=='string')throw new Error('요청 형식을 확인해 주세요.');
     if(!lock.tryLock(15000))return json_({error:'BUSY',message:'다른 요청 처리 중입니다. 같은 요청으로 다시 시도해 주세요.'});
     var env=kingEnv_();rateLimit_(r,env);var db=KingStore.open(),state=KingStore.read(db),out=King.execute(state,r,env);
-    if(out.state!==state){committing=true;KingStore.write(db,out.state);}
+    if(out.state!==state){storing=true;KingStore.write(db,out.state,function(){committing=true;});}
     return json_(Object.assign({service:'stock-king',version:1},out.response));
   }catch(error){
     // Never serialize request bodies, PINs or provider stack traces to the caller.
-    if(committing)try{PropertiesService.getScriptProperties().setProperty('LAST_STORAGE_ERROR_AT',King.stamp(Date.now()));}catch(ignored){}
+    var storageCode=storing?KingStore.failureCode(error):null;
+    if(storing){
+      try{var properties=PropertiesService.getScriptProperties();properties.setProperty('LAST_STORAGE_ERROR_AT',King.stamp(Date.now()));properties.setProperty('LAST_STORAGE_ERROR_CODE',storageCode);properties.setProperty('LAST_STORAGE_ERROR_PHASE',committing?'COMMIT':'PREPARE');}catch(ignored){}
+      console.error(JSON.stringify({event:'STORAGE_FAILURE',phase:committing?'COMMIT':'PREPARE',code:storageCode}));
+    }
     var message=String(error.message||'요청 처리 실패');
     if(/quota|Service|Exception|Sheets|Spreadsheet|JSON|TypeError|ReferenceError|property|undefined/i.test(message))message='서버 처리 또는 저장에 실패했습니다. 같은 요청으로 재시도해 주세요.';
-    return json_({error:committing?'COMMIT_UNKNOWN':'REQUEST_FAILED',message:committing?'저장 결과를 확인하지 못했습니다. 같은 요청으로 재시도해 주세요.':message});
+    var response={error:committing?'COMMIT_UNKNOWN':'REQUEST_FAILED',message:committing?'저장 결과를 확인하지 못했습니다. 같은 요청으로 재시도해 주세요.':storing?KingStore.failureMessage(storageCode):message};
+    if(storageCode)response.storageCode=storageCode;
+    return json_(response);
   }finally{if(lock.hasLock())lock.releaseLock();}
 }
 function setupStockKing() {
@@ -964,17 +970,77 @@ KingStore.read = function(db) {
   return JSON.parse(db.sheet.getRange(2,1,count,1).getValues().map(function(row){return row[0];}).join(''));
 };
 KingStore.cell = function(v) {return {userEnteredValue:typeof v==='number'?{numberValue:v}:{stringValue:String(v===undefined?'':v)}};};
-KingStore.write = function(db,state) {
+KingStore.problem = function(code,message) {var error=new Error(message);error.storageCode=code;return error;};
+KingStore.failureCode = function(error) {
+  if(['SHEETS_SERVICE_MISSING','MEMBERS_SHEET_MISSING'].indexOf(error.storageCode)>=0)return error.storageCode;
+  var message=String(error.message||'');
+  if(/quota|rate.?limit|too many|429|resource.?exhausted/i.test(message))return 'QUOTA';
+  if(/permission|forbidden|unauthorized|access denied|403|not enabled|disabled/i.test(message))return 'PERMISSION_OR_API_DISABLED';
+  if(/grid limits|maximum.*cells|cell limit|range.*bounds/i.test(message))return 'GRID_LIMIT';
+  if(/timeout|timed out|network|unavailable|internal error|503/i.test(message))return 'TRANSIENT';
+  return 'UNKNOWN';
+};
+KingStore.failureMessage = function(code) {
+  if(code==='SHEETS_SERVICE_MISSING')return '서버에 Google Sheets API 저장 서비스가 연결되지 않았습니다. 운영자가 서비스 설정을 확인해야 합니다.';
+  if(code==='MEMBERS_SHEET_MISSING')return '서버의 회원정보 시트를 찾을 수 없습니다. 운영자가 기존 데이터 시트를 확인해야 합니다.';
+  return '저장을 시작하지 못했습니다. 운영자가 서버 저장 설정을 확인해야 합니다.';
+};
+KingStore.write = function(db,state,beforeCommit) {
+  if(typeof Sheets==='undefined'||!Sheets.Spreadsheets||typeof Sheets.Spreadsheets.batchUpdate!=='function')throw KingStore.problem('SHEETS_SERVICE_MISSING',KingStore.failureMessage('SHEETS_SERVICE_MISSING'));
+  var members=db.book.getSheetByName('회원정보');if(!members)throw KingStore.problem('MEMBERS_SHEET_MISSING',KingStore.failureMessage('MEMBERS_SHEET_MISSING'));
   var parts=KingStore.encode(state),requests=[],count=parts.length+1;
   if(count>db.sheet.getMaxRows())requests.push({appendDimension:{sheetId:db.sheet.getSheetId(),dimension:'ROWS',length:count-db.sheet.getMaxRows()}});
+  if(db.sheet.getMaxColumns()<4)requests.push({appendDimension:{sheetId:db.sheet.getSheetId(),dimension:'COLUMNS',length:4-db.sheet.getMaxColumns()}});
   var data=[{values:['스키마 1',parts.length,state.revision,King.stamp(Date.now())].map(KingStore.cell)}].concat(parts.map(function(p){return {values:[KingStore.cell(p)]};}));
   requests.push({updateCells:{range:{sheetId:db.sheet.getSheetId(),startRowIndex:0,endRowIndex:Math.max(count,db.sheet.getLastRow()),startColumnIndex:0,endColumnIndex:4},rows:data,fields:'userEnteredValue'}});
-  var members=db.book.getSheetByName('회원정보'),users=Object.values(state.accounts),rows=[['계정번호','한글아이디','PIN 원문','가입일시','마지막 로그인','로그인 횟수','평생 플레이 초','회차 플레이 초','회차','현금','이용 제한']].concat(users.map(function(a){return [a.id,a.name,a.pin,King.stamp(a.joined),King.stamp(a.lastLogin),a.logins,a.lifetimeSeconds,a.playSeconds,a.runId,a.cash,a.restricted?a.restricted.reason:'없음'];}));
+  var users=Object.values(state.accounts),rows=[['계정번호','한글아이디','PIN 원문','가입일시','마지막 로그인','로그인 횟수','평생 플레이 초','회차 플레이 초','회차','현금','이용 제한']].concat(users.map(function(a){return [a.id,a.name,a.pin,King.stamp(a.joined),King.stamp(a.lastLogin),a.logins,a.lifetimeSeconds,a.playSeconds,a.runId,a.cash,a.restricted?a.restricted.reason:'없음'];}));
   if(rows.length>members.getMaxRows())requests.push({appendDimension:{sheetId:members.getSheetId(),dimension:'ROWS',length:rows.length-members.getMaxRows()}});
+  if(members.getMaxColumns()<11)requests.push({appendDimension:{sheetId:members.getSheetId(),dimension:'COLUMNS',length:11-members.getMaxColumns()}});
   requests.push({updateCells:{range:{sheetId:members.getSheetId(),startRowIndex:0,endRowIndex:Math.max(rows.length,members.getLastRow()),startColumnIndex:0,endColumnIndex:11},rows:rows.map(function(row){return {values:row.map(KingStore.cell)};}),fields:'userEnteredValue'}});
   // One atomic Google Sheets batch: account mirror and authoritative state commit together.
+  if(beforeCommit)beforeCommit();
   Sheets.Spreadsheets.batchUpdate({requests},db.book.getId());
 };
+
+
+// ===== StorageDiagnostics.gs =====
+// Owner-run, read-only. Can also be added by itself to an older server.
+// Never reads account rows or logs spreadsheet IDs, PINs, keys or provider messages.
+function diagnoseStockKingStorage() {
+  function classify(error) {
+    var message=String(error.message||'');
+    if(/quota|rate.?limit|too many|429|resource.?exhausted/i.test(message))return 'QUOTA';
+    if(/permission|forbidden|unauthorized|access denied|403|not enabled|disabled/i.test(message))return 'PERMISSION_OR_API_DISABLED';
+    if(/grid limits|maximum.*cells|cell limit|range.*bounds/i.test(message))return 'GRID_LIMIT';
+    if(/timeout|timed out|network|unavailable|internal error|503/i.test(message))return 'TRANSIENT';
+    return 'UNKNOWN';
+  }
+  var result={readOnly:true,sheetsApi:'NOT_CHECKED',lastFailure:null,lastPhase:null,warnings:[]};
+  try {
+    var properties=PropertiesService.getScriptProperties(),id=properties.getProperty('STOCK_KING_SHEET_ID');
+    var code=properties.getProperty('LAST_STORAGE_ERROR_CODE'),phase=properties.getProperty('LAST_STORAGE_ERROR_PHASE');
+    if(['SHEETS_SERVICE_MISSING','MEMBERS_SHEET_MISSING','QUOTA','PERMISSION_OR_API_DISABLED','GRID_LIMIT','TRANSIENT','UNKNOWN'].indexOf(code)>=0)result.lastFailure=code;
+    if(['PREPARE','COMMIT'].indexOf(phase)>=0)result.lastPhase=phase;
+    result.configured=!!id;
+    if(!id){result.openStatus='FAILED';result.openIssue='SERVER_NOT_CONFIGURED';}
+    else {
+      var book=SpreadsheetApp.openById(id),ledger=book.getSheetByName('서버원장'),members=book.getSheetByName('회원정보');
+      result.openStatus='OK';result.ledgerPresent=!!ledger;result.membersPresent=!!members;
+      result.ledgerColumns=ledger?ledger.getMaxColumns():0;result.membersColumns=members?members.getMaxColumns():0;
+      if(!ledger)result.warnings.push('LEDGER_SHEET_MISSING');
+      if(!members)result.warnings.push('MEMBERS_SHEET_MISSING');
+      if(ledger&&result.ledgerColumns<4||members&&result.membersColumns<11)result.warnings.push('COLUMN_GRID_TOO_SMALL');
+      if(ledger){
+        var chunks=result.ledgerColumns>=2?Number(ledger.getRange(1,2).getValue()):0;
+        result.ledgerChunks=Number.isSafeInteger(chunks)?chunks:null;
+        if(!Number.isSafeInteger(chunks)||chunks<1||chunks>100000)result.warnings.push('LEDGER_METADATA_INVALID');
+      }
+      if(typeof Sheets==='undefined'||!Sheets.Spreadsheets||typeof Sheets.Spreadsheets.get!=='function'||typeof Sheets.Spreadsheets.batchUpdate!=='function')result.sheetsApi='SHEETS_SERVICE_MISSING';
+      else {try{Sheets.Spreadsheets.get(id,{fields:'sheets(properties(gridProperties))'});result.sheetsApi='OK';}catch(error){result.sheetsApi=classify(error);}}
+    }
+  }catch(error){result.openStatus='FAILED';result.openIssue=classify(error);}
+  console.log(JSON.stringify(result));return result;
+}
 
 
 // ===== Trading.gs =====
