@@ -1,4 +1,4 @@
-// 주식왕 시뮬레이션 0.1.20 — 아래 전체 내용을 Apps Script Code.gs에 붙여넣으세요.
+// 주식왕 시뮬레이션 0.1.21 — 아래 전체 내용을 Apps Script Code.gs에 붙여넣으세요.
 
 // ===== AccountLifecycle.gs =====
 var King = typeof King === 'undefined' ? {} : King;
@@ -145,7 +145,7 @@ King.admin = function(s,a,auth,r,env) {
   }else if(r.action==='adminCancelOrder'){
     var o=s.orders[r.orderId];if(!o)King.fail('주문이 없습니다.');before=King.clone(o);if(o.status==='대기'){o.status='취소';o.closed=t;}after=o;
   }else if(r.action==='adminMarket'){
-    var x=s.market.stocks[r.symbol];if(!x||!reason)King.fail('종목과 운영 사유를 확인해 주세요.');before=King.clone(x);
+    var x=s.market.stocks[r.symbol];if((r.operation!=='listing'&&!x)||!reason)King.fail('종목과 운영 사유를 확인해 주세요.');before=x?King.clone(x):{};
     if(r.operation==='price'){if(x.fund)King.fail('ETF 가격은 장부와 괴리율로 결정됩니다.');x.price=King.int(r.price,Math.max(1,Math.ceil(x.base*.7)),Math.max(1,Math.floor(x.base*1.3)));x.tradeEpoch=(x.tradeEpoch||0)+1;x.fundamental=x.price/(1+x.pressure);x.history.push([t,x.price]);}
     else if(r.operation==='halt'){x.status='거래정지';King.news(s,x,x.name+' 거래정지','운영상 거래가 정지되었습니다.',t,0,env);}else if(r.operation==='resume'){if(x.status==='비상장')King.fail('폐지된 종목은 거래 재개할 수 없습니다.');if(x.status!=='상장'){x.status='상장';King.news(s,x,x.name+' 거래 재개','운영상 거래정지가 해제되었습니다.',t,0,env);}}
     else if(r.operation==='delist'){if(x.fund)King.fail('ETF 상장폐지는 펀드 청산 계획이 필요합니다.');x.delistAt=King.int(r.at,t+72*3600000,t+365*King.DAY);x.settlement=r.settlement===null?null:King.int(r.settlement,0,x.price);King.news(s,x,x.name+' 상장폐지 확정','최소 72시간 거래 기회 후 '+King.stamp(x.delistAt)+' 폐지 예정. '+(x.settlement===null?'비상장 보유로 전환됩니다.':'주당 회수금 '+x.settlement+'원입니다.'),t,0,env);}
@@ -294,7 +294,7 @@ function kingEnv_() {
 }
 function json_(data){return ContentService.createTextOutput(JSON.stringify(data)).setMimeType(ContentService.MimeType.JSON);}
 function doGet(){
-  try {var db=KingStore.open(),s=KingStore.read(db);return json_({service:'stock-king',version:1,maintenance:s.maintenance,serverTime:Date.now()});}
+  try {var db=KingStore.open();return json_(Object.assign({service:'stock-king',version:1},KingStore.publicStatus(db)));}
   catch(e){return json_({service:'stock-king',version:1,error:'SETUP_REQUIRED',message:'게임 서버 설치를 완료해 주세요.'});}
 }
 function rateLimit_(r,env) {
@@ -464,14 +464,14 @@ King.snapshot = function(s,a,t,proxy,env) {
   Object.keys(a.holdings).forEach(function(id){var h=King.clone(a.holdings[id]),x=s.market.stocks[id];h.price=x&&x.status!=='비상장'?x.price:0;h.value=h.price*h.quantity;h.available=h.quantity-King.lockedQuantity(s,a,id);h.profit=h.value-h.cost;h.average=h.quantity?h.cost/h.quantity:0;holdings[id]=h;if(x&&x.fund)etfValue+=h.value;else stockValue+=h.value;});
   var claims=Object.values(s.claims).filter(function(c){return c.accountId===a.id&&c.status==='대기'&&(c.reward||c.runId===a.runId);});
   var dividends=claims.filter(function(c){return !c.reward;}).reduce(function(v,c){return v+c.net;},0);
-  var stocks=Object.values(s.market.stocks).map(function(x){var v=King.clone(Object.assign({},x,{history:x.history.slice(-240)}));['fundamental','trend','pressure','tradeEpoch'].forEach(function(key){delete v[key];});if(env&&x.status==='상장'&&s.market.minute===Math.floor(t/60000))v.offer=King.priceOffer(a,x,t,env);v.chartBars={hour:King.chartBars(x.history,3600000),day:King.chartBars(x.history,King.DAY)};if(King.day(a,t)<2)delete v.financials;if(v.fund&&King.day(a,t)<4){delete v.fund;delete v.history;delete v.chartBars;}return v;});
+  var stocks=Object.values(s.market.stocks).map(function(x){var v=King.publicStock(x);if(env&&x.status==='상장'&&s.market.minute===Math.floor(t/60000))v.offer=King.priceOffer(a,x,t,env);if(King.day(a,t)<2)delete v.financials;if(v.fund&&King.day(a,t)<4){delete v.fund;delete v.history;delete v.chartBars;}return v;});
   return {revision:s.revision,serverTime:t,marketTime:s.market.minute*60000,catchingUp:s.market.minute<Math.floor(t/60000),taxPolicy:{version:'kr-2026-day3-v1',enabled:King.day(a,t)>=3,fromDay:3,stockRate:.002,etfRate:0,dividendRate:.154},achievementTargets:King.achievementTargets,day:King.day(a,t),account:{id:a.id,name:a.name,runId:a.runId,started:a.started,joined:a.joined,cash:a.cash,startingCash:a.startingCash||10000000,realized:a.realized,playSeconds:a.playSeconds,lifetimeSeconds:a.lifetimeSeconds,logins:a.logins,lastLogin:a.lastLogin,settings:a.settings,tutorial:a.tutorial,tutorialStep:a.tutorialStep,growth:King.levelInfo(a.xp),contributedCash:a.contributedCash,achievements:a.achievements,statistics:a.statistics},attendance:King.attendanceView(a,t),holdings,stocks,news:s.market.news.slice(-80).reverse().map(function(n){return King.publicNews(n,King.day(a,t));}),readNews:a.readNews,readAlerts:a.readAlerts||[],availableCash:a.cash-King.lockedCash(s,a),stockValue,etfValue,dividends,total:a.cash+stockValue+etfValue+dividends,claims,orders:Object.values(s.orders).filter(function(o){return o.accountId===a.id&&o.runId===a.runId;}).slice(-100).reverse().map(function(o){var v=King.clone(o);delete v.admin;return v;}),announcements:Object.values(s.announcements).filter(function(n){return n.status==='게시'&&(n.targets==='all'||n.targets.indexOf(a.id)>=0);}).map(function(n){return {id:n.id,title:n.title,body:n.body,at:n.at};}),economy:King.day(a,t)>=3?s.market.economy:null,economyHistory:King.day(a,t)>=3?King.clone(s.market.economyHistory||[]):[],assetHistory:a.assetHistory,notificationOptions:King.notificationOptions,alerts:King.notificationFeed(s,a,t,proxy),priceAlerts:a.priceAlerts||[],trades:Object.values(s.receipts).filter(function(v){return v.accountId===a.id&&v.runId===a.runId;}).slice(-100).map(function(v){return {id:v.id,symbol:v.symbol,side:v.side,quantity:v.quantity,price:v.price,at:v.at,memo:v.memo};}),admin:!!proxy||false,passwordAdminLogin:!proxy&&!!(env&&King.passwordAdmin(a,env)),proxy:proxy?{name:a.name,id:a.id}:null};
 };
 King.execute = function(original,req,env) {
   var t=env.now(),action=req.action;
   if(req.version!==King.VERSION)King.fail('버전이 다릅니다. 새로고침 후 다시 시도해 주세요.');
   if(action==='status')return {state:original,response:{service:'stock-king',version:1,maintenance:King.clone(original.maintenance),serverTime:t}};
-  var s=King.clone(original);
+  var s=King.forkState(original);
   if(action==='signup'||action==='login')return King.login(s,req,env);
   var auth=King.authenticate(s,req,env),a=auth.account;King.ensureProgression(a);
   var adminAction=action.indexOf('admin')===0;
@@ -505,10 +505,12 @@ King.execute = function(original,req,env) {
   if(auth.proxy&&mutation)King.audit(s,auth.actor,a.id,action,proxyBefore,King.proxyState(s,a),t,env,'대리 조작');
   if(mutation&&!adminAction)a.backupVersion=(a.backupVersion||0)+1;
   if(result.order){result.order=King.clone(result.order);delete result.order.admin;}
+  Object.keys(s.quotes).forEach(function(id){if(s.quotes[id].expires<t-60000)delete s.quotes[id];});
+  var lightRead=req.lightweight===true&&['friends','friendSearch','friendProfile','friendRanking','records','friendMessages','supportList','supportRead','adminSupportList','adminSupportRead'].indexOf(action)>=0;
+  if(lightRead&&s.market.minute===original.market.minute&&Object.values(s.market.stocks).every(function(x){return x._kingHistory&&!x._kingHistory.loaded;})&&JSON.stringify(King.coreCopy(s))===JSON.stringify(King.coreCopy(original)))return {state:original,response:result};
   s.revision++;
   if(mutation)s.requests[requestKey]={action,accountId:a.id,at:t,result:King.clone(result)};
   if(action==='quote')s.quotes[result.quote.id]=result.quote;
-  Object.keys(s.quotes).forEach(function(id){if(s.quotes[id].expires<t-60000)delete s.quotes[id];});
   if(req.lightweight===true&&['friends','friendSearch','friendProfile','friendRanking','records','friendMessages','supportList','supportRead','adminSupportList','adminSupportRead'].indexOf(action)>=0)return {state:s,response:result};
   result.snapshot=King.snapshot(s,a,t,auth.proxy,env);result.snapshot.admin=env.isAdmin(auth.actor.name);
   return {state:s,response:result};
@@ -620,6 +622,51 @@ King.makeDividend = function(s,x,perShare,t,payAt,env) {
   if(perShare>=x.price){perShare=Math.max(0,x.price-1);King.news(s,x,x.name+' 배당 감액 공시','권리 확정 시점의 주가를 반영하여 주당 '+perShare+'원으로 감액합니다.',t,0,env);}if(!perShare)return;
   Object.values(s.accounts).forEach(function(a){var h=a.holdings[x.id];if(!h||!h.quantity)return;var gross=h.quantity*perShare,taxRate=King.day(a,payAt)>=3?.154:0,income=taxRate?Math.floor(gross*14/100):0,local=Math.floor(income/10),tax=income+local,id=env.id();s.claims[id]={id,accountId:a.id,runId:a.runId,symbol:x.id,name:x.name,quantity:h.quantity,gross,tax,taxRate,taxDetails:[{name:'배당소득세',amount:income},{name:'지방소득세',amount:local}],taxVersion:'kr-2026-day3-v1',net:gross-tax,at:t,payAt,status:'대기'};King.log(s,a,x.fund?'분배 권리 확정':'배당 권리 확정',s.claims[id],t,env);});
   x.tradeEpoch=(x.tradeEpoch||0)+1;x.price=Math.max(1,x.price-perShare);x.base=Math.max(1,x.base-perShare);if(x.fund){x.fund.liability+=perShare*x.fund.units;}else {x.fundamental=Math.max(1,x.fundamental-perShare);Object.values(s.market.stocks).filter(function(v){return v.fund;}).forEach(function(v){var amount=(v.fund.positions[x.id]||0)*perShare;v.fund.receivable+=amount;s.market.calendar.push({id:env.id(),type:'펀드배당',symbol:v.id,amount,payAt});});}
+};
+
+
+// ===== HistoryViews.gs =====
+var King = typeof King === 'undefined' ? {} : King;
+// Keep immutable stored history outside the frequently copied live state.
+King.attachHistory = function(stock,load,preview,bars,copyOnLoad) {
+  var meta={loaded:false,preview:preview,bars:bars,origin:load},points;
+  Object.defineProperty(stock,'_kingHistory',{value:meta,configurable:true});
+  Object.defineProperty(stock,'history',{enumerable:true,configurable:true,get:function(){
+    if(!meta.loaded){points=load();if(copyOnLoad)points=King.clone(points);meta.loaded=true;meta.preview=null;meta.bars=null;}
+    return points;
+  },set:function(value){points=value;meta.loaded=true;meta.preview=null;meta.bars=null;}});
+};
+King.historyPreview = function(stock) {
+  var meta=stock._kingHistory;
+  return meta&&!meta.loaded&&meta.preview?meta.preview:stock.history.slice(-240);
+};
+King.historyBars = function(stock) {
+  var meta=stock._kingHistory;
+  return meta&&!meta.loaded&&meta.bars?meta.bars:{hour:King.chartBars(stock.history,3600000),day:King.chartBars(stock.history,King.DAY)};
+};
+King.coreCopy = function(state) {
+  var core={},market={};
+  Object.keys(state).forEach(function(k){if(k!=='market')core[k]=King.clone(state[k]);});
+  Object.keys(state.market).forEach(function(k){if(k!=='stocks')market[k]=King.clone(state.market[k]);});
+  market.stocks={};Object.keys(state.market.stocks).forEach(function(id){
+    var source=state.market.stocks[id],stock={};
+    Object.keys(source).forEach(function(k){if(k!=='history')stock[k]=King.clone(source[k]);});
+    market.stocks[id]=stock;
+  });core.market=market;return core;
+};
+King.forkState = function(state) {
+  var copy=King.coreCopy(state);
+  Object.keys(state.market.stocks).forEach(function(id){
+    var source=state.market.stocks[id],meta=source._kingHistory,descriptor=Object.getOwnPropertyDescriptor(source,'history');
+    var preview=meta&&!meta.loaded?meta.preview:descriptor&&descriptor.value?descriptor.value.slice(-240):null;
+    var bars=meta&&!meta.loaded?meta.bars:null;
+    var origin=meta&&!meta.loaded?meta.origin:function(){return source.history;};
+    King.attachHistory(copy.market.stocks[id],origin,preview,bars,true);
+  });return copy;
+};
+King.publicStock = function(stock) {
+  var value={};Object.keys(stock).forEach(function(k){if(k!=='history'&&['fundamental','trend','pressure','tradeEpoch'].indexOf(k)<0)value[k]=King.clone(stock[k]);});
+  value.history=King.clone(King.historyPreview(stock));value.chartBars=King.clone(King.historyBars(stock));return value;
 };
 
 
@@ -994,9 +1041,12 @@ KingStore.open = function() {
   var book=SpreadsheetApp.openById(id),sheet=book.getSheetByName('서버원장');if(!sheet)throw new Error('서버원장 시트를 찾을 수 없습니다.');return {book,sheet};
 };
 KingStore.read = function(db) {
+  var schema=db.sheet.getRange(1,1).getValue();
+  if(schema==='스키마 2'){var header=db.sheet.getRange(1,1,1,6).getValues()[0];try{return KingStore.segmentReadState(db,header);}catch(error){if(!error.checkpointChanged)throw error;return KingStore.segmentReadState(db,db.sheet.getRange(1,1,1,6).getValues()[0]);}}
   var count=Number(db.sheet.getRange(1,2).getValue());if(!Number.isSafeInteger(count)||count<1||count>100000)throw new Error('서버원장 검증 실패. 운영자 복구가 필요합니다.');
-  return JSON.parse(db.sheet.getRange(2,1,count,1).getValues().map(function(row){return row[0];}).join(''));
+  var state=JSON.parse(db.sheet.getRange(2,1,count,1).getValues().map(function(row){return row[0];}).join(''));db.originalMemberRows=KingStore.memberRows(state);return state;
 };
+KingStore.publicStatus=function(db){var schema=db.sheet.getRange(1,1).getValue();return {maintenance:schema==='스키마 2'?JSON.parse(db.sheet.getRange(1,6).getValue()):KingStore.read(db).maintenance,serverTime:Date.now()};};
 KingStore.cell = function(v) {return {userEnteredValue:typeof v==='number'?{numberValue:v}:{stringValue:String(v===undefined?'':v)}};};
 KingStore.problem = function(code,message) {var error=new Error(message);error.storageCode=code;return error;};
 KingStore.failureCode = function(error) {
@@ -1013,7 +1063,8 @@ KingStore.failureMessage = function(code) {
   if(code==='MEMBERS_SHEET_MISSING')return '서버의 회원정보 시트를 찾을 수 없습니다. 운영자가 기존 데이터 시트를 확인해야 합니다.';
   return '저장을 시작하지 못했습니다. 운영자가 서버 저장 설정을 확인해야 합니다.';
 };
-KingStore.write = function(db,state,beforeCommit) {
+KingStore.write = function(db,state,beforeCommit) {return db.segments?KingStore.segmentWrite(db,state,beforeCommit):KingStore.writeLegacy(db,state,beforeCommit);};
+KingStore.writeLegacy = function(db,state,beforeCommit) {
   if(typeof Sheets==='undefined'||!Sheets.Spreadsheets||typeof Sheets.Spreadsheets.batchUpdate!=='function')throw KingStore.problem('SHEETS_SERVICE_MISSING',KingStore.failureMessage('SHEETS_SERVICE_MISSING'));
   var members=db.book.getSheetByName('회원정보');if(!members)throw KingStore.problem('MEMBERS_SHEET_MISSING',KingStore.failureMessage('MEMBERS_SHEET_MISSING'));
   var parts=KingStore.encode(state),requests=[],count=parts.length+1;
@@ -1025,6 +1076,8 @@ KingStore.write = function(db,state,beforeCommit) {
   if(rows.length>members.getMaxRows())requests.push({appendDimension:{sheetId:members.getSheetId(),dimension:'ROWS',length:rows.length-members.getMaxRows()}});
   if(members.getMaxColumns()<11)requests.push({appendDimension:{sheetId:members.getSheetId(),dimension:'COLUMNS',length:11-members.getMaxColumns()}});
   requests.push({updateCells:{range:{sheetId:members.getSheetId(),startRowIndex:0,endRowIndex:Math.max(rows.length,members.getLastRow()),startColumnIndex:0,endColumnIndex:11},rows:rows.map(function(row){return {values:row.map(KingStore.cell)};}),fields:'userEnteredValue'}});
+  if(db.clearSegmentSheet)requests.push({updateCells:{range:{sheetId:db.clearSegmentSheet.getSheetId(),startRowIndex:0,endRowIndex:db.clearSegmentSheet.getLastRow(),startColumnIndex:0,endColumnIndex:1},rows:[],fields:'userEnteredValue'}});
+  if(db.clearSegmentSheet)requests.push({updateCells:{range:{sheetId:db.sheet.getSheetId(),startRowIndex:0,endRowIndex:1,startColumnIndex:4,endColumnIndex:6},rows:[],fields:'userEnteredValue'}});
   // One atomic Google Sheets batch: account mirror and authoritative state commit together.
   var bookId=db.book.getId();
   if(beforeCommit)beforeCommit();
@@ -1060,15 +1113,91 @@ function diagnoseStockKingStorage() {
       if(!members)result.warnings.push('MEMBERS_SHEET_MISSING');
       if(ledger&&result.ledgerColumns<4||members&&result.membersColumns<11)result.warnings.push('COLUMN_GRID_TOO_SMALL');
       if(ledger){
-        var chunks=result.ledgerColumns>=2?Number(ledger.getRange(1,2).getValue()):0;
-        result.ledgerChunks=Number.isSafeInteger(chunks)?chunks:null;
-        if(!Number.isSafeInteger(chunks)||chunks<1||chunks>100000)result.warnings.push('LEDGER_METADATA_INVALID');
+        if(ledger.getRange(1,1).getValue()==='스키마 2'){
+          result.format=2;var segments=book.getSheetByName('서버구획');result.segmentsPresent=!!segments;
+          if(!segments)result.warnings.push('SEGMENTS_SHEET_MISSING');
+          if(result.ledgerColumns<6)result.warnings.push('COLUMN_GRID_TOO_SMALL');
+          else {var index=JSON.parse(ledger.getRange(1,5).getValue());result.coreChunks=index.core&&index.core.count;result.historySegments=Object.keys(index.histories||{}).length;if(index.version!==2||!index.core||!result.historySegments)result.warnings.push('LEDGER_METADATA_INVALID');}
+        }else {
+          result.format=1;var chunks=result.ledgerColumns>=2?Number(ledger.getRange(1,2).getValue()):0;
+          result.ledgerChunks=Number.isSafeInteger(chunks)?chunks:null;
+          if(!Number.isSafeInteger(chunks)||chunks<1||chunks>100000)result.warnings.push('LEDGER_METADATA_INVALID');
+        }
       }
       if(typeof Sheets==='undefined'||!Sheets.Spreadsheets||typeof Sheets.Spreadsheets.get!=='function'||typeof Sheets.Spreadsheets.batchUpdate!=='function')result.sheetsApi='SHEETS_SERVICE_MISSING';
       else {try{Sheets.Spreadsheets.get(id,{fields:'sheets(properties(gridProperties))'});result.sheetsApi='OK';}catch(error){result.sheetsApi=classify(error);}}
     }
   }catch(error){result.openStatus='FAILED';result.openIssue=classify(error);}
   console.log(JSON.stringify(result));return result;
+}
+
+
+// ===== StorageSegments.gs =====
+var KingStore = typeof KingStore === 'undefined' ? {} : KingStore;
+KingStore.segmentHash=function(text){return Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256,text,Utilities.Charset.UTF_8).map(function(b){return ('0'+((b+256)%256).toString(16)).slice(-2);}).join('');};
+KingStore.segmentStateHash=function(state){return KingStore.segmentHash(JSON.stringify(state,function(key,value){if(value&&typeof value==='object'&&!Array.isArray(value)){var sorted=Object.create(null);Object.keys(value).sort().forEach(function(k){sorted[k]=value[k];});return sorted;}return value;}));};
+KingStore.segmentPack=function(value){return Utilities.base64Encode(Utilities.gzip(Utilities.newBlob(JSON.stringify(value),'application/json')).getBytes());};
+KingStore.segmentUnpack=function(value){return JSON.parse(Utilities.ungzip(Utilities.newBlob(Utilities.base64Decode(value),'application/gzip')).getDataAsString('UTF-8'));};
+KingStore.segmentCache=function(){try{return CacheService.getScriptCache();}catch(ignored){return null;}};
+KingStore.segmentKey=function(db,record){return 'king-segment-v1:'+KingStore.segmentHash(db.book.getId())+':'+record.hash;};
+KingStore.segmentCached=function(db,record){try{var cache=KingStore.segmentCache(),value=cache&&cache.get(KingStore.segmentKey(db,record));return value&&KingStore.segmentHash(value)===record.hash?value:null;}catch(ignored){return null;}};
+KingStore.segmentRemember=function(db,record,value){if(value.length>90000)return;try{var cache=KingStore.segmentCache();if(cache)cache.put(KingStore.segmentKey(db,record),value,300);}catch(ignored){}};
+KingStore.segmentValidate=function(record){if(!record||!Number.isSafeInteger(record.row)||record.row<2||!Number.isSafeInteger(record.count)||record.count<1||!Number.isSafeInteger(record.capacity)||record.capacity<record.count||record.capacity>100000||!/^[a-f0-9]{64}$/.test(record.hash||''))throw Error('서버 구획 메타데이터를 확인해 주세요.');};
+KingStore.segmentRead=function(db,record,rows,first){
+  KingStore.segmentValidate(record);var value=KingStore.segmentCached(db,record);
+  if(!value){var data=rows?rows.slice(record.row-first,record.row-first+record.count):db.segmentSheet.getRange(record.row,1,record.count,1).getValues();value=data.map(function(r){return r[0];}).join('');
+    if(KingStore.segmentHash(value)!==record.hash){var error=Error('서버 구획이 변경되었습니다. 다시 확인해 주세요.');error.checkpointChanged=true;throw error;}KingStore.segmentRemember(db,record,value);}
+  return KingStore.segmentUnpack(value);
+};
+KingStore.segmentReadState=function(db,header){
+  var index=JSON.parse(header[4]);if(!index||index.version!==2||!index.core||!index.histories)throw Error('서버 구획 인덱스를 확인해 주세요.');
+  db.segmentSheet=db.book.getSheetByName('서버구획');if(!db.segmentSheet)throw Error('서버 구획 시트를 찾을 수 없습니다. 운영자 복구가 필요합니다.');
+  db.segments=index;var state=KingStore.segmentRead(db,index.core),historyData=null;
+  db.originalMemberRows=KingStore.memberRows(state);Object.keys(state.market.stocks).forEach(function(id){
+    var stock=state.market.stocks[id],view=stock._series;if(!view||!index.histories[id])throw Error('종목 시세 구획을 확인해 주세요.');delete stock._series;
+    King.attachHistory(stock,function(){
+      if(!historyData){historyData={};var missing=Object.keys(index.histories).filter(function(k){var rec=index.histories[k],cached=KingStore.segmentCached(db,rec);if(cached){historyData[k]=KingStore.segmentUnpack(cached);return false;}return true;});
+        if(missing.length){var records=missing.map(function(k){KingStore.segmentValidate(index.histories[k]);return index.histories[k];}),first=Math.min.apply(null,records.map(function(r){return r.row;})),end=Math.max.apply(null,records.map(function(r){return r.row+r.count;}));var rows=db.segmentSheet.getRange(first,1,end-first,1).getValues();missing.forEach(function(k){historyData[k]=KingStore.segmentRead(db,index.histories[k],rows,first);});}}
+      return historyData[id];
+    },view.preview,view.bars);
+  });return state;
+};
+KingStore.memberRows=function(state){return [['계정번호','한글아이디','PIN 원문','가입일시','마지막 로그인','로그인 횟수','평생 플레이 초','회차 플레이 초','회차','현금','이용 제한']].concat(Object.values(state.accounts).map(function(a){return [a.id,a.name,a.pin===undefined?'':a.pin,King.stamp(a.joined),King.stamp(a.lastLogin),a.logins,a.lifetimeSeconds,a.playSeconds,a.runId,a.cash,a.restricted?a.restricted.reason:'없음'];}));};
+KingStore.segmentWrite=function(db,state,beforeCommit){
+  if(typeof Sheets==='undefined'||!Sheets.Spreadsheets||typeof Sheets.Spreadsheets.batchUpdate!=='function')throw KingStore.problem('SHEETS_SERVICE_MISSING',KingStore.failureMessage('SHEETS_SERVICE_MISSING'));
+  var members=db.book.getSheetByName('회원정보');if(!members)throw KingStore.problem('MEMBERS_SHEET_MISSING',KingStore.failureMessage('MEMBERS_SHEET_MISSING'));
+  var sheet=db.segmentSheet||db.book.getSheetByName('서버구획')||db.book.insertSheet('서버구획'),previous=db.segments,index=previous?King.clone(previous):{version:2,nextRow:2,histories:{}},requests=[],remember=[];
+  function update(range,rows){requests.push({updateCells:{range:range,rows:rows.map(function(row){return {values:row.map(KingStore.cell)};}),fields:'userEnteredValue'}});}
+  function store(value,record){var packed=KingStore.segmentPack(value),hash=KingStore.segmentHash(packed);if(!previous&&JSON.stringify(KingStore.segmentUnpack(packed))!==JSON.stringify(value))throw Error('장부 전환 사전 대조 실패. 원본은 변경하지 않았습니다.');if(record&&hash===record.hash)return record;
+    var parts=[];for(var i=0;i<packed.length;i+=30000)parts.push(packed.slice(i,i+30000));var next=record&&record.capacity>=parts.length?King.clone(record):{row:index.nextRow,capacity:parts.length+1};if(next.row===index.nextRow)index.nextRow+=next.capacity;
+    next.count=parts.length;next.hash=hash;update({sheetId:sheet.getSheetId(),startRowIndex:next.row-1,endRowIndex:next.row-1+next.capacity,startColumnIndex:0,endColumnIndex:1},Array.from({length:next.capacity},function(_,j){return [parts[j]||''];}));
+    if(record&&record.row!==next.row)update({sheetId:sheet.getSheetId(),startRowIndex:record.row-1,endRowIndex:record.row-1+record.capacity,startColumnIndex:0,endColumnIndex:1},[]);
+    remember.push({record:next,value:packed});return next;
+  }
+  var core=King.coreCopy(state);Object.keys(state.market.stocks).forEach(function(id){var stock=state.market.stocks[id],meta=stock._kingHistory;
+    if(previous&&(!meta||meta.loaded||!index.histories[id]))index.histories[id]=store(stock.history,index.histories[id]);
+    core.market.stocks[id]._series={preview:King.historyPreview(stock),bars:King.historyBars(stock)};
+  });
+  Object.keys(index.histories).forEach(function(id){if(!state.market.stocks[id]){var rec=index.histories[id];update({sheetId:sheet.getSheetId(),startRowIndex:rec.row-1,endRowIndex:rec.row-1+rec.capacity,startColumnIndex:0,endColumnIndex:1},[]);delete index.histories[id];}});
+  // The live core is placed first on initial conversion, before price archive blocks.
+  if(!previous){index.nextRow=2;requests=[];remember=[];index.histories={};index.core=store(core,null);Object.keys(state.market.stocks).forEach(function(id){index.histories[id]=store(state.market.stocks[id].history,null);});}
+  else index.core=store(core,index.core);
+  if(index.nextRow-1>sheet.getMaxRows())requests.unshift({appendDimension:{sheetId:sheet.getSheetId(),dimension:'ROWS',length:index.nextRow-1-sheet.getMaxRows()}});
+  if(db.sheet.getMaxColumns()<6)requests.unshift({appendDimension:{sheetId:db.sheet.getSheetId(),dimension:'COLUMNS',length:6-db.sheet.getMaxColumns()}});
+  if(members.getMaxColumns()<11)requests.unshift({appendDimension:{sheetId:members.getSheetId(),dimension:'COLUMNS',length:11-members.getMaxColumns()}});
+  var rows=KingStore.memberRows(state),old=db.originalMemberRows||null;
+  if(rows.length>members.getMaxRows())requests.unshift({appendDimension:{sheetId:members.getSheetId(),dimension:'ROWS',length:rows.length-members.getMaxRows()}});
+  for(var row=0;row<Math.max(rows.length,old?old.length:members.getLastRow());row++)if(!old||JSON.stringify(rows[row]||[])!==JSON.stringify(old[row]||[]))update({sheetId:members.getSheetId(),startRowIndex:row,endRowIndex:row+1,startColumnIndex:0,endColumnIndex:11},rows[row]?[rows[row]]:[]);
+  update({sheetId:db.sheet.getSheetId(),startRowIndex:0,endRowIndex:1,startColumnIndex:0,endColumnIndex:6},[['스키마 2',0,state.revision,King.stamp(Date.now()),JSON.stringify(index),JSON.stringify(state.maintenance)]]);
+  if(!previous&&db.sheet.getLastRow()>1)update({sheetId:db.sheet.getSheetId(),startRowIndex:1,endRowIndex:db.sheet.getLastRow(),startColumnIndex:0,endColumnIndex:4},[]);
+  var bookId=db.book.getId();if(beforeCommit)beforeCommit();Sheets.Spreadsheets.batchUpdate({requests:requests},bookId);
+  db.segments=index;db.segmentSheet=sheet;db.originalMemberRows=KingStore.memberRows(state);remember.forEach(function(item){KingStore.segmentRemember(db,item.record,item.value);});
+};
+function enableSegmentedStockKingStorage(){
+  var lock=LockService.getScriptLock();lock.waitLock(30000);try{var db=KingStore.open(),state=KingStore.read(db);if(db.segments)return {changed:false,format:2};var expected=KingStore.segmentStateHash(state);KingStore.segmentWrite(db,state);var verified=KingStore.read(KingStore.open());if(KingStore.segmentStateHash(verified)!==expected)throw Error('장부 전환 대조가 필요합니다.');console.log(JSON.stringify({changed:true,format:2,retainedHistory:true}));return {changed:true,format:2};}finally{lock.releaseLock();}
+}
+function restoreLegacyStockKingStorage(){
+  var lock=LockService.getScriptLock();lock.waitLock(30000);try{var db=KingStore.open(),state=KingStore.read(db);if(!db.segments)return {changed:false,format:1};db.clearSegmentSheet=db.segmentSheet;KingStore.writeLegacy(db,state);console.log(JSON.stringify({changed:true,format:1,retainedHistory:true}));return {changed:true,format:1};}finally{lock.releaseLock();}
 }
 
 

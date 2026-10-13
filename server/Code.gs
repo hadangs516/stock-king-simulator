@@ -15,7 +15,7 @@ function kingEnv_() {
 }
 function json_(data){return ContentService.createTextOutput(JSON.stringify(data)).setMimeType(ContentService.MimeType.JSON);}
 function doGet(){
-  try {var db=KingStore.open(),s=KingStore.read(db);return json_({service:'stock-king',version:1,maintenance:s.maintenance,serverTime:Date.now()});}
+  try {var db=KingStore.open();return json_(Object.assign({service:'stock-king',version:1},KingStore.publicStatus(db)));}
   catch(e){return json_({service:'stock-king',version:1,error:'SETUP_REQUIRED',message:'게임 서버 설치를 완료해 주세요.'});}
 }
 function rateLimit_(r,env) {

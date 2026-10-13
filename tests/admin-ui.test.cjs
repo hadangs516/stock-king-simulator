@@ -30,3 +30,16 @@ test('late automatic admin renewal cannot install authority in a different accou
   assert.equal(api.adminToken,'');assert.equal(reads,0);assert.equal(main.innerHTML,'unchanged');
  }
 });
+
+
+test('cash reward and maintenance release send only relevant values despite unrelated stale drafts',async t=>{
+ const {ui}=await fixture(t,async()=>{}, {getSnapshot:()=>({serverTime:100000,stocks:[]})});ui.selected.add('player');
+ await ui.submit({id:'admin-reward-form'},new Map(Object.entries({kind:'cash',amount:'10000',quantity:'0',symbol:'005930',badge:'stale',reason:'test'})));
+ assert.deepEqual(ui.confirmation.data.reward,{kind:'cash',amount:10000});
+ await ui.submit({id:'admin-maintenance-form'},new Map(Object.entries({enabled:'false',reason:'stale',until:'stale'})));
+ assert.deepEqual(ui.confirmation.data,{enabled:false,reason:'',until:''});
+ await ui.submit({id:'admin-adjust-form',dataset:{id:'player'}},new Map(Object.entries({correction:'cash',cash:'123456',day:'0',quantity:'0',cost:'0',reason:'test'})));
+ assert.deepEqual(ui.confirmation.data,{targetId:'player',reason:'test',cash:123456});
+ await ui.submit({id:'admin-market-form'},new Map(Object.entries({operation:'halt',symbol:'005930',price:'0',days:'0',perShare:'-1',reason:'test'})));
+ assert.deepEqual(ui.confirmation.data,{operation:'halt',symbol:'005930',reason:'test'});
+});

@@ -25,9 +25,16 @@ function diagnoseStockKingStorage() {
       if(!members)result.warnings.push('MEMBERS_SHEET_MISSING');
       if(ledger&&result.ledgerColumns<4||members&&result.membersColumns<11)result.warnings.push('COLUMN_GRID_TOO_SMALL');
       if(ledger){
-        var chunks=result.ledgerColumns>=2?Number(ledger.getRange(1,2).getValue()):0;
-        result.ledgerChunks=Number.isSafeInteger(chunks)?chunks:null;
-        if(!Number.isSafeInteger(chunks)||chunks<1||chunks>100000)result.warnings.push('LEDGER_METADATA_INVALID');
+        if(ledger.getRange(1,1).getValue()==='스키마 2'){
+          result.format=2;var segments=book.getSheetByName('서버구획');result.segmentsPresent=!!segments;
+          if(!segments)result.warnings.push('SEGMENTS_SHEET_MISSING');
+          if(result.ledgerColumns<6)result.warnings.push('COLUMN_GRID_TOO_SMALL');
+          else {var index=JSON.parse(ledger.getRange(1,5).getValue());result.coreChunks=index.core&&index.core.count;result.historySegments=Object.keys(index.histories||{}).length;if(index.version!==2||!index.core||!result.historySegments)result.warnings.push('LEDGER_METADATA_INVALID');}
+        }else {
+          result.format=1;var chunks=result.ledgerColumns>=2?Number(ledger.getRange(1,2).getValue()):0;
+          result.ledgerChunks=Number.isSafeInteger(chunks)?chunks:null;
+          if(!Number.isSafeInteger(chunks)||chunks<1||chunks>100000)result.warnings.push('LEDGER_METADATA_INVALID');
+        }
       }
       if(typeof Sheets==='undefined'||!Sheets.Spreadsheets||typeof Sheets.Spreadsheets.get!=='function'||typeof Sheets.Spreadsheets.batchUpdate!=='function')result.sheetsApi='SHEETS_SERVICE_MISSING';
       else {try{Sheets.Spreadsheets.get(id,{fields:'sheets(properties(gridProperties))'});result.sheetsApi='OK';}catch(error){result.sheetsApi=classify(error);}}

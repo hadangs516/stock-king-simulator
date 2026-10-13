@@ -1,3 +1,5 @@
+import {CoalescedReads} from './read-requests.js';
+import {syncConditionalFields} from './conditional-fields.js';
 import {notificationSettings,economyView,economyDetail,errorNotice} from './reference-panels.js';
 import {navIcon,NAV_TABS} from './nav-icons.js';
 import {loadingTips} from './loading-tips.js';
@@ -34,8 +36,8 @@ async function warmBrowserData(){
  const cached=browserCache.read(owner,'records'),refresh=warmOwner!==owner||Date.now()-warmAt>=60000&&cached?.next===null;
  if(!refresh&&cached?.next===null)return;warmRunning=true;
  try{
-  if(refresh){warmOwner=owner;warmAt=Date.now();const friends=await api.send('friends');if(owner!==cacheOwner()||session!==api.token)return;browserCache.write(owner,'friends',friends);}
-  const offset=refresh?0:cached?.next||0,r=await api.send('records',{offset,limit:300});if(owner!==cacheOwner()||session!==api.token)return;
+  if(refresh){warmOwner=owner;warmAt=Date.now();const friends=await request('friends',{},true);if(owner!==cacheOwner()||session!==api.token)return;browserCache.write(owner,'friends',friends);}
+  const offset=refresh?0:cached?.next||0,r=await request('records',{offset,limit:300},true);if(owner!==cacheOwner()||session!==api.token)return;
   const previous=browserCache.read(owner,'records'),{records:merged,next}=mergeRecordPage(previous,r,refresh);browserCache.write(owner,'records',{records:merged,next});
   if(page==='records'){records=merged;recordOffset=next;render();}
   if(next!==null){clearTimeout(warmTimer);warmTimer=setTimeout(()=>void warmBrowserData(),3000);}
@@ -66,7 +68,7 @@ function celebrate(achievement,count){
 }
 document.addEventListener('error',event=>{if(event.target.matches?.('.company-logo img'))event.target.remove();},true);
 $('#toast').onclick=()=>{if(Date.now()-toastAt>=1000)$('#toast').hidden=true;};
-function showModal(title,content){delete modal.dataset.required;modal.classList.toggle('attendance-modal',title==='출석 보상');const receipt=title.includes('영수증');modal.classList.toggle('trade-receipt',receipt);$('#modal-close').hidden=receipt;modal.classList.toggle('notification-settings-modal',title==='알림 수신 설정');modal.classList.toggle('error-notice-modal',title==='확인이 필요해요');$('#modal-title').innerHTML=['알림 수신 설정','확인이 필요해요'].includes(title)?view.uiArt('notification')+'<span>'+e(title)+(title==='알림 수신 설정'?'<small>중요한 소식을 놓치지 않도록 원하는 알림을 선택해 주세요.</small>':'')+'</span>':e(title);$('#modal-content').innerHTML=content+(receipt?view.button('확인','close','','primary wide'):'');if(!modal.open)modal.showModal();}
+function showModal(title,content){delete modal.dataset.required;modal.classList.toggle('attendance-modal',title==='출석 보상');const receipt=title.includes('영수증');modal.classList.toggle('trade-receipt',receipt);$('#modal-close').hidden=receipt;modal.classList.toggle('notification-settings-modal',title==='알림 수신 설정');modal.classList.toggle('error-notice-modal',title==='확인이 필요해요');$('#modal-title').innerHTML=['알림 수신 설정','확인이 필요해요'].includes(title)?view.uiArt('notification')+'<span>'+e(title)+(title==='알림 수신 설정'?'<small>중요한 소식을 놓치지 않도록 원하는 알림을 선택해 주세요.</small>':'')+'</span>':e(title);$('#modal-content').innerHTML=content+(receipt?view.button('확인','close','','primary wide'):'');syncConditionalFields($('#modal-content'));if(!modal.open)modal.showModal();}
 $('#modal-close').onclick=()=>{if(modal.dataset.required)return;leaveScreen();modal.close();};modal.addEventListener('cancel',event=>{if(modal.dataset.required)event.preventDefault();else leaveScreen();});modal.addEventListener('click',event=>{if(event.target===modal&&!modal.dataset.required){const box=modal.getBoundingClientRect();if(event.clientX<box.left||event.clientX>box.right||event.clientY<box.top||event.clientY>box.bottom){leaveScreen();modal.close();}}});
 function failure(error){if(error.loginRequired||error.cancelled)return;showModal('확인이 필요해요',errorNotice(error.message,!!pending));}
 function connection(message){$('#connection').hidden=!message;$('#connection').innerHTML=message?`${e(message)}${view.button('재시도','retrySync')}`:'';}
@@ -75,7 +77,13 @@ function leaveScreen(){screenEpoch++;clearTimeout(loadingTimer);requestLabels.le
 function hideProcessing(){const overlay=$('#request-loading');try{overlay.hidePopover?.();}catch{}overlay.hidden=true;if(!overlay.showPopover)document.body.append(overlay);}
 function processingLabel(action,data){const names={records:'로그 확인 중',receipt:'영수증 확인 중',order:'주문 등록 중',cancel:'주문 취소 중',claim:'보상 수령 중',attendance:'출석 보상 수령 중',tutorialProgress:'안내 저장 중',friends:'친구 목록 확인 중',friendSearch:'친구 검색 중',friendProfile:'친구 정보 확인 중',friendRequest:'친구 요청 보내는 중',friendRespond:'친구 요청 처리 중',friendRemove:'친구 목록 변경 중',friendSettings:'공개 설정 저장 중',friendRanking:'친구 순위 확인 중',friendMessages:'대화 불러오는 중',friendSend:'메시지 보내는 중',supportList:'문의 목록 확인 중',supportRead:'대화 불러오는 중',supportCreate:'새 문의 만드는 중',supportSend:'메시지 보내는 중',adminSupportList:'문의 목록 확인 중',adminSupportRead:'대화 불러오는 중',adminSupportSend:'답변 보내는 중',backup:'백업 준비 중',restore:'백업 확인 중',save:'진행 저장 중',reset:'진행 초기화 중',deleteAccount:'계정 삭제 처리 중',quote:'거래 가격 확인 중',report:'문의 보내는 중',pin:'비밀번호 변경 중',priceAlert:'목표가 알림 설정 중'};return action==='trade'?(data.side==='sell'?'주식 매도 중':data.side==='buy'?'주식 매수 중':'거래 처리 중'):names[action]||'요청 처리 중';}
 function updateProcessingLabel(){const label=$('#request-loading-text');if(label)label.textContent=requestLabels.at(-1)?.label||'요청 처리 중';}
-async function request(action,data={},background=false){
+const readFlights=new CoalescedReads();
+function request(action,data={},background=false){
+ const readOnly=['friends','friendSearch','friendProfile','friendRanking','records','friendMessages','supportList','supportRead','adminSupportList','adminSupportRead','adminOverview','adminPlayer'];
+ if(!readOnly.includes(action))return requestOnce(action,data,background);
+ return readFlights.run(JSON.stringify([screenEpoch,api.token,api.adminToken,api.proxyToken,action,data]),()=>requestOnce(action,data,background));
+}
+async function requestOnce(action,data={},background=false){
  const quiet=['sync','explore','login','signup','settings','readNews','readAlerts','tutorial','attendance','friendSend','supportSend','adminSupportSend','supportCreate','friendMessages','supportRead','adminSupportRead','supportList','adminSupportList','friends','friendRanking','records'];
  const visible=!background&&!quiet.includes(action),session=api.token+'|'+api.proxyToken,epoch=screenEpoch;
  const abortable=['records','receipt','quote','friends','friendSearch','friendProfile','friendRanking','friendMessages','supportList','supportRead','adminSupportList','adminSupportRead','adminOverview','adminPlayer'].includes(action),controller=abortable?new AbortController():null;
@@ -164,13 +172,13 @@ async function navigate(next,id){
 }
 function animateTotal(){if(reduced())return;cancelAnimationFrame(animationFrame);const el=$('#total-number'),status=$('#sum-status'),items=[...document.querySelectorAll('.sum-item')];if(!el)return;const target=snapshot.total,start=performance.now();function frame(now){if(page!=='total')return;const p=Math.min(1,(now-start)/550),count=Math.ceil(items.length*p);el.textContent=money(items.slice(0,count).reduce((sum,item)=>sum+Number(item.dataset.amount),0));status.textContent=p<1?`자산 합산 중 · ${count}/${items.length}`:`자산 합산 완료 · ${items.length}/${items.length}`;if(p<1)animationFrame=requestAnimationFrame(frame);else el.textContent=money(target);}animationFrame=requestAnimationFrame(frame);}
 function economy(){return snapshot.day<3?view.lockedView(snapshot,3,'경제 지표','금리·경기·물가를 함께 살펴봅니다.'):economyView(snapshot);}
-async function loadRecords(refresh=false){const owner=cacheOwner(),epoch=screenEpoch,result=await request('records',{offset:refresh?0:recordOffset},true);if(owner!==cacheOwner()||epoch!==screenEpoch)return;const merged=mergeRecordPage({records},result,refresh);records=merged.records;recordOffset=merged.next;browserCache.write(owner,'records',merged);if(page==='records')render();}
+async function loadRecords(refresh=false){const owner=cacheOwner(),epoch=screenEpoch,result=await request('records',{offset:refresh?0:recordOffset,limit:300},true);if(owner!==cacheOwner()||epoch!==screenEpoch)return;const merged=mergeRecordPage({records},result,refresh);records=merged.records;recordOffset=merged.next;browserCache.write(owner,'records',merged);if(page==='records')render();}
 function recordsView(){return `<section class="records-screen secondary-screen">${view.button('돌아가기','settings','','back')}${view.sceneHeading('계정 로그 확인','records','내 게임 활동을 최신순으로 확인하세요.')}${records.map(r=>`<div class="news-card record-entry"><span class="eyebrow">DAY ${r.day} · ${stamp(r.at,true)}</span><h3>${e(r.type)}</h3>${r.data.title?`<p>${e(r.data.title)}</p>`:''}${r.data.items?`<p>${r.data.items.map(k=>e(({bgm:'배경음악',sfx:'효과음',terms:'용어 설명',animation:'애니메이션',favorites:'관심종목',notifications:'알림 설정'})[k]||k)).join(' · ')}</p>`:''}${r.data.category?`<p>${e(r.data.category)}</p>`:''}${r.data.name?`<p>${e(r.data.name)} · ${r.data.quantity||0}주</p>`:''}${r.data.price?`<p class="muted">체결가 ${money(r.data.price)}</p>`:''}${r.data.memo?`<p>투자 메모: ${e(r.data.memo)}</p>`:''}${r.data.total?`<p>${money(r.data.total)}</p>`:''}${r.data.net?`<p>${money(r.data.net)}</p>`:''}${r.data.side?view.button('영수증 보기','receipt',`data-id="${e(r.data.id)}"`,'link-button'):''}<p class="footnote">회차 ${e(r.runId.slice(0,8))}</p></div>`).join('')||'<p class="empty">아직 기록이 없습니다.</p>'}${recordOffset!==null?view.button('이전 기록 더 보기','moreRecords','','wide'):''}</section>`;}
 function tradingForm(id,side,reserve=false){
  const x=snapshot.stocks.find(v=>v.id===id);if(x.market==='ETF'&&snapshot.day<4)return showModal('ETF는 DAY 4에 열려요',view.lockedView(snapshot,4,'ETF','전체시장·반도체·소비재 ETF를 만나보세요.'));
  if(snapshot.catchingUp)throw new Error('시장 동기화 후 거래할 수 있습니다.');
  showModal(`${x.name} · ${reserve?'예약':side==='buy'?'매수':'매도'}`,tradeForm(x,{side,reserve,availableCash:snapshot.availableCash,availableShares:snapshot.holdings[id]?.available||0,taxHint:taxHint(),logo:view.companyLogo(x)}));
- if(reserve&&side==='sell')$('#trade-form [name=kind]').value='limitSell';updateTradeOffer();
+ if(reserve&&side==='sell')$('#trade-form [name=kind]').value='limitSell';syncConditionalFields($('#modal-content'));updateTradeOffer();
 }
 function updateTradeOffer(){const f=$('#trade-form');if(!f)return;const x=snapshot.stocks.find(x=>x.id===f.dataset.symbol);f._offer=x.offer?structuredClone(x.offer):null;const label=$('#trade-current');if(label)label.textContent=money(x.price);const changeLabel=$('#trade-change');if(changeLabel){changeLabel.textContent=percent(change(x));changeLabel.className=change(x)>=0?'up':'down';}estimate();}
 function taxHint(){return snapshot.taxPolicy?'매수·매도 수수료 0.05%. DAY 3부터 주식 매도 세금 0.20%, 국내 주식형 ETF 매매 세금 0%.':'매수·매도 수수료 0.05%, 주식 매도 세금 0.15%, ETF 세금 0%.';}
@@ -280,7 +288,7 @@ document.addEventListener('click',async event=>{
 });
 document.addEventListener('input',event=>{lastInput=Date.now();if(event.target.closest('#trade-form'))estimate();if(event.target.closest('#settings-form')&&event.target.type==='range')savePreferences({[event.target.name]:Number(event.target.value)});if(event.target.id==='search'){filter.search=event.target.value;if(!event.isComposing)updateSearch();}});
 document.addEventListener('compositionend',event=>{if(event.target.id==='search'){filter.search=event.target.value;updateSearch();}});
-document.addEventListener('change',event=>{if(event.target.id==='friend-rank'){void friendsUI.loadRank(event.target.value).catch(failure);return;}if(event.target.closest('#settings-form')&&event.target.type!=='range'){const input=event.target;savePreferences({[input.name]:input.type==='checkbox'?input.checked:Number(input.value)});}if(event.target.id==='sort'){filter.sort=event.target.value;render();}if(event.target.id==='favorites'){filter.favorites=event.target.checked;render();}});
+document.addEventListener('change',event=>{if(event.target.form)syncConditionalFields(event.target.form);if(event.target.id==='friend-rank'){void friendsUI.loadRank(event.target.value).catch(failure);return;}if(event.target.closest('#settings-form')&&event.target.type!=='range'){const input=event.target;savePreferences({[input.name]:input.type==='checkbox'?input.checked:Number(input.value)});}if(event.target.id==='sort'){filter.sort=event.target.value;render();}if(event.target.id==='favorites'){filter.favorites=event.target.checked;render();}});
 document.addEventListener('submit',async event=>{
  event.preventDefault();const form=event.target,fd=new FormData(form),data=Object.fromEntries(fd);const submit=form.querySelector('button[type=submit],button:not([type])');if(submit)submit.disabled=true;
  try{
@@ -299,7 +307,7 @@ document.addEventListener('submit',async event=>{
   }
   if(form.id==='trade-form'){
     const id=form.dataset.symbol,quantity=Number(data.quantity);if(!Number.isSafeInteger(quantity)||quantity<1)throw new Error('수량은 1주 단위로 입력해 주세요.');
-    if(form.dataset.reserve==='true'){const req={symbol:id,quantity,kind:data.kind,price:Number(data.price),stop:Number(data.stop),expiryDays:Number(data.expiryDays)};showModal('예약 내용 확인',`<p>${e(snapshot.stocks.find(x=>x.id===id).name)} · ${quantity}주</p><p>조건가 ${money(req.price)}${req.kind==='oco'?' / 손절 '+money(req.stop):''}</p><p class="footnote">확정 시 필요한 현금 또는 수량을 확보합니다.</p><form id="confirm-order-form"><button type="submit" class="primary wide">예약 등록 확정</button></form>`);$('#confirm-order-form')._order=req;}
+    if(form.dataset.reserve==='true'){const req={symbol:id,quantity,kind:data.kind,price:Number(data.price),...(data.kind==='oco'?{stop:Number(data.stop)}:{}),expiryDays:Number(data.expiryDays)};showModal('예약 내용 확인',`<p>${e(snapshot.stocks.find(x=>x.id===id).name)} · ${quantity}주</p><p>조건가 ${money(req.price)}${req.kind==='oco'?' / 손절 '+money(req.stop):''}</p><p class="footnote">확정 시 필요한 현금 또는 수량을 확보합니다.</p><form id="confirm-order-form"><button type="submit" class="primary wide">예약 등록 확정</button></form>`);$('#confirm-order-form')._order=req;}
     else {
       let payload={symbol:id,side:form.dataset.side,quantity,memo:data.memo};
       if(form._offer){if(snapshot.serverTime+Date.now()-receivedAt>=form._offer.expires){await sync(false);throw new Error('시세를 갱신했어요. 가격을 확인하고 다시 눌러 주세요.');}payload.offer=form._offer;}

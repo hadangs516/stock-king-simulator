@@ -10,3 +10,17 @@
 .attendance-frame{left:2.7%;right:2.7%;box-shadow:inset 0 0 0 2px #fff78b,0 0 0 1px #925b0e,0 2px 3px #79500b66}
 
 .boot{position:relative;isolation:isolate;background:#ffdf37}.boot::before{content:"";position:absolute;left:0;right:0;bottom:0;height:calc(100vw * 150 / 720);max-height:120px;background:url('./assets/ui/reference/loading-floor.webp') center bottom/100% 100% no-repeat;mask-image:linear-gradient(transparent,#000 45%);z-index:-1;pointer-events:none}
+.home-shortcuts .shortcut,.home-shortcuts .shortcut:hover{background:linear-gradient(135deg,#68e5ff 0%,#078dff 32%,#0352d4 100%);border:2px solid #ffed79;box-shadow:inset 0 2px 2px #ffffff9c,inset 0 -2px 2px #004bc370,0 2px 3px #92651a55;aspect-ratio:1.45;border-radius:18px}
+.home-shortcuts .shortcut-economy,.home-shortcuts .shortcut-economy:hover{background:linear-gradient(135deg,#e88fff,#a315fa 38%,#6600d7)}
+.home-shortcuts .shortcut-total,.home-shortcuts .shortcut-total:hover,.home-shortcuts .shortcut-chest,.home-shortcuts .shortcut-chest:hover{background:linear-gradient(135deg,#fff87c,#ffcb1b 40%,#e99b00)}
+.home-shortcuts .shortcut-gift,.home-shortcuts .shortcut-gift:hover{background:linear-gradient(135deg,#ffe883,#ffb321 42%,#ea8003)}
+.home-shortcuts .shortcut-trophy,.home-shortcuts .shortcut-trophy:hover{background:linear-gradient(135deg,#9afd59,#0ad52b 42%,#009025)}
+.home-shortcuts .shortcut-illustration{position:absolute;inset:4% 18% 38%;display:flex;align-items:center;justify-content:center;filter:drop-shadow(0 2px 2px #3c260940)}
+.home-shortcuts .shortcut-illustration img,.home-shortcuts .shortcut-illustration svg{width:100%;height:100%;object-fit:contain}
+.home-shortcuts .tile-copy{opacity:1!important;height:38%;bottom:0;padding:0 8% 5%;background:none}
+.home-shortcuts .tile-copy strong{font-size:clamp(14px,3.7vw,23px);letter-spacing:-.03em;line-height:1.15}
+.home-shortcuts .tile-copy small{font-size:clamp(9px,2.45vw,13px);margin-top:3px;font-weight:600;line-height:1.15}
+.home-shortcuts .tile-arrow{opacity:1!important;right:5%;bottom:20%;font-size:22px}
+.home-shortcuts .shortcut-total .tile-copy,.home-shortcuts .shortcut-chest .tile-copy,.home-shortcuts .shortcut-gift .tile-copy{color:#482a00;text-shadow:0 1px #fff9bc}
+.home-shortcuts .shortcut-total .tile-arrow,.home-shortcuts .shortcut-chest .tile-arrow,.home-shortcuts .shortcut-gift .tile-arrow{color:#714500;text-shadow:none}
+.conditional-section{margin:14px 0;padding:12px;border-radius:16px;background:#fff8d8}.conditional-section h3{margin:0 0 12px;font-size:18px}

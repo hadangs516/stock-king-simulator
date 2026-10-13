@@ -51,7 +51,7 @@ King.admin = function(s,a,auth,r,env) {
   }else if(r.action==='adminCancelOrder'){
     var o=s.orders[r.orderId];if(!o)King.fail('주문이 없습니다.');before=King.clone(o);if(o.status==='대기'){o.status='취소';o.closed=t;}after=o;
   }else if(r.action==='adminMarket'){
-    var x=s.market.stocks[r.symbol];if(!x||!reason)King.fail('종목과 운영 사유를 확인해 주세요.');before=King.clone(x);
+    var x=s.market.stocks[r.symbol];if((r.operation!=='listing'&&!x)||!reason)King.fail('종목과 운영 사유를 확인해 주세요.');before=x?King.clone(x):{};
     if(r.operation==='price'){if(x.fund)King.fail('ETF 가격은 장부와 괴리율로 결정됩니다.');x.price=King.int(r.price,Math.max(1,Math.ceil(x.base*.7)),Math.max(1,Math.floor(x.base*1.3)));x.tradeEpoch=(x.tradeEpoch||0)+1;x.fundamental=x.price/(1+x.pressure);x.history.push([t,x.price]);}
     else if(r.operation==='halt'){x.status='거래정지';King.news(s,x,x.name+' 거래정지','운영상 거래가 정지되었습니다.',t,0,env);}else if(r.operation==='resume'){if(x.status==='비상장')King.fail('폐지된 종목은 거래 재개할 수 없습니다.');if(x.status!=='상장'){x.status='상장';King.news(s,x,x.name+' 거래 재개','운영상 거래정지가 해제되었습니다.',t,0,env);}}
     else if(r.operation==='delist'){if(x.fund)King.fail('ETF 상장폐지는 펀드 청산 계획이 필요합니다.');x.delistAt=King.int(r.at,t+72*3600000,t+365*King.DAY);x.settlement=r.settlement===null?null:King.int(r.settlement,0,x.price);King.news(s,x,x.name+' 상장폐지 확정','최소 72시간 거래 기회 후 '+King.stamp(x.delistAt)+' 폐지 예정. '+(x.settlement===null?'비상장 보유로 전환됩니다.':'주당 회수금 '+x.settlement+'원입니다.'),t,0,env);}
