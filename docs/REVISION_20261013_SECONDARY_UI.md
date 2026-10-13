@@ -22,3 +22,10 @@
 - 상위 `배포자료/20261013_저장오류점검/secondary-final/`에 최종 화면과 results.json, 같은 폴더의 guide-results.json에 전체 서버/짧은 진단 복사와 대체 복사/모바일 안내 표시 결과를 보관한다. 실제 휴대폰 OS 키보드/설치 아이콘/터치/오디오 출력과는 구분한다.
 - 서버 저장 수정의 운영 원인은 여전히 미확정이다. 최신 통합 소스 `deploy/server-update.txt`와 상위 `주식왕_서버_0.1.16.gs`를 준비했다. 저장 인자 준비 중 getId 실패도 API 전 실패로 분류하는 추가 회귀 테스트는 수정 전 실패/수정 후 통과를 확인했다. 실제 GAS는 소유자가 코드/서비스 확인 및 기존 배포 새 버전 갱신을 해야 한다.
 - 사용자 기존 삭제 기획기록/미커밋 V0_UI_GUIDE/비공개 자료는 제외한다. 실제 계정 로그인·자산 변경·초기화·setupStockKing 실행 없음. 아래 배포 기록은 프런트/공개 소스의 전달 확인이며 GAS 적용과 별개다.
+
+## 배포 결과
+
+- 구현 `5a7131432af7582a82ba71dad5600ae41c6f922d` main push 완료. Pages `38365179841` completed/success.
+- 공개 화면·CSS·JS·캐시·서버 코드/진단/안내 17개 HTTP 파일이 검증한 로컬 파일과 모두 일치했다. 증거는 상위 `배포자료/20261013_저장오류점검/deployment.json`, `public-verification.json`.
+- 전체 서버 코드 복사: https://hadangs516.github.io/stock-king-simulator/review/setup.html#server . 원인 진단: https://hadangs516.github.io/stock-king-simulator/review/storage.html . 파일: `deploy/server-update.txt` 및 상위 `주식왕_서버_0.1.16.gs`.
+- 운영 GAS 적용·실제 저장 예외 원인 확인은 아직 미확정이며 소유자 실행/결과가 필요하다. 기존 사용자 미커밋 자료는 배포에서 제외했다.
