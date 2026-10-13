@@ -42,6 +42,7 @@ KingStore.write = function(db,state,beforeCommit) {
   if(members.getMaxColumns()<11)requests.push({appendDimension:{sheetId:members.getSheetId(),dimension:'COLUMNS',length:11-members.getMaxColumns()}});
   requests.push({updateCells:{range:{sheetId:members.getSheetId(),startRowIndex:0,endRowIndex:Math.max(rows.length,members.getLastRow()),startColumnIndex:0,endColumnIndex:11},rows:rows.map(function(row){return {values:row.map(KingStore.cell)};}),fields:'userEnteredValue'}});
   // One atomic Google Sheets batch: account mirror and authoritative state commit together.
+  var bookId=db.book.getId();
   if(beforeCommit)beforeCommit();
-  Sheets.Spreadsheets.batchUpdate({requests},db.book.getId());
+  Sheets.Spreadsheets.batchUpdate({requests},bookId);
 };

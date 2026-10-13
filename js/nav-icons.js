@@ -8,8 +8,8 @@ const shapes={
  news:'<rect class="nav-body" x="12" y="8" width="41" height="48" rx="5"/><path class="nav-highlight" d="M17 11h31M15 18v30"/><rect class="nav-hole" x="18" y="16" width="12" height="12" rx="1"/><path class="nav-lines" d="M35 17h11M35 25h11M19 35h27M19 43h27M19 50h18"/>',
  settings:`<path class="nav-body" d="${gear}"/><path class="nav-highlight" d="M13 31a19 19 0 0 1 23-18"/><circle class="nav-hole" cx="32" cy="32" r="10"/>`
 };
-export function navIcon(name,active=false){
- const mode=active?(name==='home'?'gold':'ink'):'silver',key='nav-'+name,stops=mode==='gold'?['#fff9b5','#fff02c','#ffbc0c','#ffd829']:mode==='ink'?['#36401b','#222a10','#121907','#283210']:['#f7f8f2','#c6cbc4','#7c847a','#afb7aa'];
+export function navIcon(name,active=false,prefix='nav'){
+ const mode=active?(name==='home'?'gold':'ink'):'silver',key=prefix+'-'+name,stops=mode==='gold'?['#fff9b5','#fff02c','#ffbc0c','#ffd829']:mode==='ink'?['#36401b','#222a10','#121907','#283210']:['#f7f8f2','#c6cbc4','#7c847a','#afb7aa'];
  const edge=mode==='gold'?'#a65b00':mode==='ink'?'#202603':'#727c6e',hole=active?'#ffed37':'#102716',highlight=mode==='ink'?'#65702a':'#ffffff',door=mode==='gold'?'#c98a06':hole;
  return `<svg class="nav-icon nav-icon-${mode}" viewBox="0 0 64 64" aria-hidden="true"><defs><linearGradient id="${key}" x1="0" y1="0" x2=".2" y2="1">${stops.map((color,i)=>`<stop offset="${[0,.32,.77,1][i]}" stop-color="${color}"/>`).join('')}</linearGradient></defs><g fill="url(#${key})" stroke="${edge}" stroke-width="${mode==='gold'?2.4:1.3}" stroke-linejoin="round">${shapes[name]||shapes.home}</g></svg>`.replaceAll('class="nav-body"',`class="nav-body" fill="url(#${key})"`).replaceAll('class="nav-pocket"',`class="nav-pocket" fill="url(#${key})"`).replaceAll('class="nav-hole"',`class="nav-hole" fill="${hole}" stroke="none"`).replaceAll('class="nav-door"',`class="nav-door" fill="${door}"`).replaceAll('class="nav-lines"',`class="nav-lines" fill="none" stroke="${hole}" stroke-width="3" stroke-linecap="round"`).replaceAll('class="nav-highlight"',`class="nav-highlight" fill="none" stroke="${highlight}" stroke-width="1.3" stroke-linecap="round" opacity=".65"`);
 }

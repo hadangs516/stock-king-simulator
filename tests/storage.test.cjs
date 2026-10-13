@@ -42,3 +42,7 @@ test('standalone diagnosis works with an older server and sanitizes provider err
  vm.runInContext(fs.readFileSync('server/StorageDiagnostics.gs','utf8'),ctx);const r=ctx.diagnoseStockKingStorage();
  assert.equal(r.readOnly,true);assert.equal(r.sheetsApi,'PERMISSION_OR_API_DISABLED');assert.equal(r.lastFailure,null);assert.equal(r.lastPhase,null);assert.doesNotMatch(logs.join(''),/private-|test-book|fixture-signing-key/);
 });
+test('spreadsheet identity lookup failure is rejected before sending the save batch',()=>{
+ const h=service(),before=JSON.stringify(h.state);let writes=0;h.book.getId=()=>{throw Error('403 permission denied for private-sheet-id');};h.ctx.Sheets.Spreadsheets.batchUpdate=()=>{writes++;};
+ const r=h.post({action:'signup',name:'준비인자점검',pin:'0012',consent:true});assert.equal(r.error,'REQUEST_FAILED');assert.equal(r.storageCode,'PERMISSION_OR_API_DISABLED');assert.equal(h.properties.get('LAST_STORAGE_ERROR_PHASE'),'PREPARE');assert.equal(writes,0);assert.equal(JSON.stringify(h.state),before);assert.doesNotMatch(JSON.stringify(r),/private-sheet-id/);
+});

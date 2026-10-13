@@ -1,5 +1,5 @@
 import {escape as e} from './format.js';
-import {button} from './views.js';
+import {button,sceneHeading} from './views.js';
 export const terms={'평균 매수가':'매수에 쓴 총금액을 보유 수량으로 나눈 값입니다. 이 게임은 매수 수수료를 포함합니다. 예: 10,005원에 1주를 사면 평균 매수가는 10,005원입니다.','평가손익':'아직 팔지 않은 주식의 현재 평가금액과 매입금액 차이입니다. 지금 매도할 때의 비용은 별도입니다.','실현손익':'주식을 팔아 확정된 손익입니다. 매수 원가와 매도 비용·세금을 함께 반영합니다.','상한가·하한가':'전일 기준가 대비 하루 상승·하락 범위입니다. 일반 주식은 ±30%이며 여러 날의 누적 손실은 제한하지 않습니다.','NAV':'ETF가 보유한 증권·현금·미수금에서 부채를 뺀 뒤 발행 좌수로 나눈 가치입니다. 거래 가격과 다를 수 있습니다.','배당':'권리 기준시점에 보유한 수량에 따라 확정되는 분배액입니다. 배당락과 세금을 반영하며 항상 지급되지는 않습니다.'};
 Object.assign(terms,{
  '봉차트':'일정 시간의 시가·고가·저가·종가를 한 개의 봉으로 보여줘요. 빨강은 종가가 시가보다 높고, 파랑은 낮아요. 꼬리는 그 구간의 가장 높고 낮은 가격이에요.',
@@ -71,4 +71,4 @@ const examples={
  '상장폐지':'관련 기업 뉴스와 거래소의 상장폐지 분류에서 확인합니다.'
 };
 export function termExample(name){const group=groups.find(g=>g[0].includes(name));return group?{where:name==='거래량'?'매수·매도 영수증 → 거래 수량':name==='시가총액'?'용어 사전 → 계산 예시':group[1],example:examples[name]||group[2],page:name==='시가총액'?'terms':group[3]}:{where:'주식 용어 사전',example:examples[name]||'게임의 투자 판단에 사용하는 용어입니다.',page:'terms'};}
-export function glossaryPage(s){return `${button('돌아가기','settings','','back')}<section class="glossary"><h2>주식 용어 사전</h2><p>모르는 용어를 눌러 뜻과 게임 속 사용 예시를 확인하세요.</p><label class="card check"><input id="terms-toggle" type="checkbox" ${s.account.settings.terms?'checked':''}>게임 화면에 용어 도움말 표시</label>${Object.entries(terms).map(([name,meaning])=>{const sample=termExample(name);return `<details class="card" data-panel="term-${e(name)}"><summary>${e(name)}</summary><p>${e(meaning)}</p><aside><strong>게임에서 쓰이는 곳 · ${e(sample.where)}</strong><p>${e(sample.example)}</p>${button('해당 화면으로',sample.page,'','link-button')}</aside></details>`;}).join('')}</section>`;}
+export function glossaryPage(s){return `${button('돌아가기','settings','','back')}<section class="glossary">${sceneHeading('주식 용어 사전','book')}<p>모르는 용어를 눌러 뜻과 게임 속 사용 예시를 확인하세요.</p><label class="card check"><input id="terms-toggle" type="checkbox" ${s.account.settings.terms?'checked':''}>게임 화면에 용어 도움말 표시</label>${Object.entries(terms).map(([name,meaning])=>{const sample=termExample(name);return `<details class="card" data-panel="term-${e(name)}"><summary>${e(name)}</summary><p>${e(meaning)}</p><aside><strong>게임에서 쓰이는 곳 · ${e(sample.where)}</strong><p>${e(sample.example)}</p>${button('해당 화면으로',sample.page,'','link-button')}</aside></details>`;}).join('')}</section>`;}

@@ -1,7 +1,7 @@
 import {escape as e,stamp} from './format.js';
-import {button} from './views.js';
+import {button,sceneHeading} from './views.js';
 export class ChatUI {
- constructor(hooks){this.hooks=hooks;this.owner='';this.key='';this.messages=[];this.drafts=new Map();this.before=null;this.sending=new Set();}
+ constructor(hooks){this.hooks=hooks;this.owner='';this.key='';this.messages=[];this.drafts=new Map();this.before=null;this.sending=new Set();globalThis.visualViewport?.addEventListener('resize',()=>this.keepComposerVisible());}
  context(){return this.hooks.context();}
  cached(name){return this.hooks.cache?.read(this.hooks.owner?.(),name);}
  save(){if(!this.mode?.startsWith('admin'))this.hooks.cache?.write(this.hooks.owner?.(),'chat:'+this.mode+':'+this.id,{messages:this.messages,before:this.before});}
@@ -18,13 +18,18 @@ export class ChatUI {
   const result=await this.hooks.read(admin?'adminSupportList':'supportList');if(context!==this.context()||this.listRequest!==request||!this.hooks.isSupport())return;
   this.conversations=result.conversations;if(!admin)this.hooks.cache?.write(this.hooks.owner?.(),'support-list',this.conversations);await this.hooks.navigate('support');
  }
- listView(){return `${button('돌아가기',this.listAdmin?'admin':'settings','','back')}<div class="page-head"><h2>${this.listAdmin?'고객센터 문의':'고객센터'}</h2>${this.listAdmin?'':button('새 채팅','chatNew','','primary')}</div><p class="footnote">문의별로 대화를 이어가세요. 답변은 이 화면에서 확인할 수 있습니다.</p><div class="list">${(this.conversations||[]).map(c=>button(`<strong>${e(c.category)}${c.nickname?' · '+e(c.nickname):''}</strong><span>${e(c.preview)}</span><small>${stamp(c.at,true)}${c.unread?' · 새 답변 '+c.unread:''}</small>`,'chatSupport',`data-id="${e(c.id)}" data-title="${e(c.category)}"`,'conversation-card')).join('')||'<p class="empty">아직 문의가 없어요.</p>'}</div>`;}
+ listView(){return `<section class="support-screen secondary-screen">${button('돌아가기',this.listAdmin?'admin':'settings','','back')}${sceneHeading(this.listAdmin?'고객센터 문의':'고객센터','support','',this.listAdmin?'':button('새 채팅','chatNew','','primary'))}<p class="footnote">문의별로 대화를 이어가세요. 답변은 이 화면에서 확인할 수 있습니다.</p><div class="list">${(this.conversations||[]).map(c=>button(`<strong>${e(c.category)}${c.nickname?' · '+e(c.nickname):''}</strong><span>${e(c.preview)}</span><small>${stamp(c.at,true)}${c.unread?' · 새 답변 '+c.unread:''}</small>`,'chatSupport',`data-id="${e(c.id)}" data-title="${e(c.category)}"`,'conversation-card')).join('')||'<p class="empty">아직 문의가 없어요.</p>'}</div></section>`;}
  newConversation(){this.hooks.modal('새 문의',`<form id="chat-create-form"><label>문의 종류<select name="category"><option>오류·버그</option><option>기능 제안</option><option>이용 질문</option><option>기타</option></select></label><label>첫 메시지<textarea name="body" maxlength="2000" rows="5" required placeholder="문의 내용을 적어 주세요."></textarea></label><button type="submit" class="primary wide">대화 시작</button></form>`);}
  async create(form){const context=this.context(),r=await this.hooks.call('supportCreate',{category:form.elements.category.value,body:form.elements.body.value});if(context!==this.context())return;this.hooks.close();await this.open('support',r.conversation.id,r.conversation.category);}
+ keepComposerVisible(){
+  if(!this.hooks.isChat?.())return;const form=document.querySelector('#chat-message-form');if(form?.dataset.key!==this.key||!document.activeElement?.closest('#chat-message-form'))return;
+  const viewport=globalThis.visualViewport,nav=document.querySelector('#nav'),bottom=Math.min(nav?.getBoundingClientRect().top??innerHeight,(viewport?.offsetTop||0)+(viewport?.height||innerHeight))-8,delta=form.getBoundingClientRect().bottom-bottom;
+  if(delta>0)window.scrollBy({top:Math.ceil(delta),behavior:'instant'});
+ }
  render(){
   const main=document.querySelector('#main'),form=document.querySelector('#chat-message-form');
   if(form?.dataset.key!==this.key){main.innerHTML=`${button('대화 목록','chatBack','','back')}<div class="page-head"><h2>${e(this.title)}</h2><span class="tag">${this.mode==='friend'?'친구 대화':'고객센터'}</span></div><p id="chat-status" class="footnote" role="status"></p><section id="chat-messages" class="chat-messages" role="log" aria-label="대화 메시지"></section><form id="chat-message-form" data-key="${e(this.key)}"><label for="chat-body" class="sr-label">메시지</label><textarea id="chat-body" name="body" rows="3" maxlength="2000" required placeholder="메시지를 입력하세요"></textarea><div class="row spread"><small>Enter는 줄바꿈 · 최대 2,000자</small><button type="submit" class="primary">전송</button></div></form>`;
-   const input=document.querySelector('#chat-body');input.value=this.drafts.get(this.key)||'';input.addEventListener('compositionstart',()=>input.dataset.composing='true');input.addEventListener('compositionend',()=>delete input.dataset.composing);
+   const input=document.querySelector('#chat-body');input.value=this.drafts.get(this.key)||'';input.addEventListener('compositionstart',()=>input.dataset.composing='true');input.addEventListener('compositionend',()=>delete input.dataset.composing);input.addEventListener('focus',()=>requestAnimationFrame(()=>this.keepComposerVisible()));input.addEventListener('input',()=>this.keepComposerVisible());
   }
   this.paint();
  }

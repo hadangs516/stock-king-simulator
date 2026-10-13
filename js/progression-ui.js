@@ -13,7 +13,9 @@ export function tutorialPage(s,step,replay=false){
   `<h3>게임을 시작하기 전!</h3><p>자주 접속해야 더 유리해요. 편하게 접속할 수 있도록 앱을 설치해 보세요.</p><p>지금 설치하지 않아도 언제든 설정에서 설치할 수 있어요. 설치 후 삭제해도 불이익은 없어요.</p>${button('설치하기','tutorialInstall','','wide')}`,
   '<h3>모든 설명이 끝났어요. 이제 바로 게임 시작할게요!</h3>'
  ];
- return `<section class="onboarding"><p class="eyebrow">첫 접속 안내 · ${step+1} / 9${replay?' · 다시 보기':''}</p><div class="tutorial-content">${pages[step]}</div><div class="row">${step?button('이전','tutorialPrevious','','grow'):''}${step===1&&!paid?'':button(step===8?'게임 시작':step===7?'나중에 설치하기':'다음',step===8?'finishTutorial':'tutorialNext','','primary grow')}</div></section>`;
+ const icons=['shortcut-gift-object','coin-transparent','calendar-transparent','book-transparent','info-transparent','book-transparent','support-transparent','account-transparent','shortcut-chest-object'];
+ const coinPage=pages[step].replace('<div class="welcome-coins" aria-hidden="true">₩</div>','<div class="welcome-coins" aria-hidden="true"><img src="./assets/ui/reference/coin-transparent.webp" alt=""></div>');
+ return `<section class="onboarding"><p class="eyebrow">첫 접속 안내 · ${step+1} / 9${replay?' · 다시 보기':''}</p><div class="tutorial-steps" aria-hidden="true">${pages.map((_,i)=>`<i class="${i<step?'done':i===step?'current':''}"></i>`).join('')}</div><div class="tutorial-content">${step===1?'':`<img class="tutorial-art" src="./assets/ui/reference/${icons[step]}.webp" alt="">`}${coinPage}</div><div class="row">${step?button('이전','tutorialPrevious','','grow'):''}${step===1&&!paid?'':button(step===8?'게임 시작':step===7?'나중에 설치하기':'다음',step===8?'finishTutorial':'tutorialNext','','primary grow')}</div></section>`;
 }
 export function attendancePage(s){
  const a=s.attendance;if(!a)return '<p>서버 업데이트 후 출석을 이용할 수 있어요.</p>';
