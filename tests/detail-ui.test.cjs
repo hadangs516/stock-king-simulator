@@ -1,6 +1,15 @@
 const test=require('node:test'),assert=require('node:assert/strict');
 const {harness,signup}=require('./helpers.cjs');
 
+test('related news appears only at the end of stock detail, outside the price chart',async()=>{
+ const {detail}=await import('../js/views.js'),s=signup(harness()).snapshot,x=s.stocks[0];
+ s.news=[{id:'news-proof',symbol:x.id,title:'새 기업 소식',body:'확인한 기업 소식입니다.',at:s.serverTime}];
+ const html=detail(s,x),chart=html.slice(html.indexOf('class="detail-chart"'),html.indexOf('class="trade-actions"'));
+ assert.ok(!chart.includes('chartNews'));assert.ok(!chart.includes('새 기업 소식'));
+ assert.ok(html.slice(html.indexOf('detail-related-news')).includes('새 기업 소식'));
+ assert.ok(html.indexOf('detail-related-news')>html.indexOf('detail-company'));
+});
+
 test('stock detail keeps live price, holdings, trading actions and full company facts after the visual restoration',async()=>{
  const {detail}=await import('../js/views.js'),{money}=await import('../js/format.js');
  const h=harness(),s=signup(h).snapshot,x={...s.stocks.find(v=>v.market!=='ETF'),id:'detail-fixture',name:'<테스트 기업>',sector:'검증 산업',listed:'2020-01-02',description:'원본 설명 '.repeat(45),financials:[{at:s.serverTime,revenue:1230000,profit:456000,debt:789000}]};

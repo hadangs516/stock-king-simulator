@@ -1,7 +1,7 @@
 import {escape as e,stamp} from './format.js';
 import {button,sceneHeading} from './views.js';
 export class ChatUI {
- constructor(hooks){this.hooks=hooks;this.owner='';this.key='';this.messages=[];this.drafts=new Map();this.before=null;this.sending=new Set();globalThis.visualViewport?.addEventListener('resize',()=>this.keepComposerVisible());}
+ constructor(hooks){this.hooks=hooks;this.owner='';this.key='';this.messages=[];this.drafts=new Map();this.before=null;this.sending=new Set();for(const event of ['resize','scroll'])globalThis.visualViewport?.addEventListener(event,()=>this.keepComposerVisible());globalThis.addEventListener?.('resize',()=>this.keepComposerVisible());}
  context(){return this.hooks.context();}
  cached(name){return this.hooks.cache?.read(this.hooks.owner?.(),name);}
  save(){if(!this.mode?.startsWith('admin'))this.hooks.cache?.write(this.hooks.owner?.(),'chat:'+this.mode+':'+this.id,{messages:this.messages,before:this.before});}
@@ -22,16 +22,23 @@ export class ChatUI {
  newConversation(){this.hooks.modal('새 문의',`<form id="chat-create-form"><label>문의 종류<select name="category"><option>오류·버그</option><option>기능 제안</option><option>이용 질문</option><option>기타</option></select></label><label>첫 메시지<textarea name="body" maxlength="2000" rows="5" required placeholder="문의 내용을 적어 주세요."></textarea></label><button type="submit" class="primary wide">대화 시작</button></form>`);}
  async create(form){const context=this.context(),r=await this.hooks.call('supportCreate',{category:form.elements.category.value,body:form.elements.body.value});if(context!==this.context())return;this.hooks.close();await this.open('support',r.conversation.id,r.conversation.category);}
  keepComposerVisible(){
-  if(!this.hooks.isChat?.())return;const form=document.querySelector('#chat-message-form');if(form?.dataset.key!==this.key||!document.activeElement?.closest('#chat-message-form'))return;
-  const viewport=globalThis.visualViewport,nav=document.querySelector('#nav'),bottom=Math.min(nav?.getBoundingClientRect().top??innerHeight,(viewport?.offsetTop||0)+(viewport?.height||innerHeight))-8,delta=form.getBoundingClientRect().bottom-bottom;
-  if(delta>0)window.scrollBy({top:Math.ceil(delta),behavior:'instant'});
+  if(!this.hooks.isChat?.()||typeof document==='undefined')return;const form=document.querySelector('#chat-message-form');if(form?.dataset.key!==this.key)return;
+  const history=document.querySelector('#chat-messages'),atBottom=history&&history.scrollHeight-history.scrollTop-history.clientHeight<60,key=this.key,viewport=globalThis.visualViewport;
+  document.documentElement.style.setProperty('--chat-height',(viewport?.height||globalThis.innerHeight)+'px');
+  document.documentElement.style.setProperty('--chat-top',(viewport?.offsetTop||0)+'px');
+  if(atBottom)requestAnimationFrame(()=>{if(key===this.key&&this.hooks.isChat?.()&&history.isConnected)history.scrollTop=history.scrollHeight;});
+ }
+ resizeInput(input){
+  if(!input?.style)return;const history=document.querySelector('#chat-messages'),atBottom=history&&history.scrollHeight-history.scrollTop-history.clientHeight<60;
+  input.style.height='auto';input.style.height=Math.min(104,Math.max(44,input.scrollHeight))+'px';
+  if(atBottom)history.scrollTop=history.scrollHeight;
  }
  render(){
   const main=document.querySelector('#main'),form=document.querySelector('#chat-message-form');
-  if(form?.dataset.key!==this.key){main.innerHTML=`${button('대화 목록','chatBack','','back')}<div class="page-head"><h2>${e(this.title)}</h2><span class="tag">${this.mode==='friend'?'친구 대화':'고객센터'}</span></div><p id="chat-status" class="footnote" role="status"></p><section id="chat-messages" class="chat-messages" role="log" aria-label="대화 메시지"></section><form id="chat-message-form" data-key="${e(this.key)}"><label for="chat-body" class="sr-label">메시지</label><textarea id="chat-body" name="body" rows="3" maxlength="2000" required placeholder="메시지를 입력하세요"></textarea><div class="row spread"><small>Enter는 줄바꿈 · 최대 2,000자</small><button type="submit" class="primary">전송</button></div></form>`;
-   const input=document.querySelector('#chat-body');input.value=this.drafts.get(this.key)||'';input.addEventListener('compositionstart',()=>input.dataset.composing='true');input.addEventListener('compositionend',()=>delete input.dataset.composing);input.addEventListener('focus',()=>requestAnimationFrame(()=>this.keepComposerVisible()));input.addEventListener('input',()=>this.keepComposerVisible());
+  if(form?.dataset.key!==this.key){main.innerHTML=`<header class="chat-header">${button('‹','chatBack','aria-label="대화 목록으로 돌아가기"','back')}<div><h2>${e(this.title)}</h2><small>${this.mode==='friend'?'친구 대화':'고객센터'}</small></div></header><div id="chat-connection-host"></div><p id="chat-status" class="footnote" role="status"></p><section id="chat-messages" class="chat-messages" role="log" aria-label="대화 메시지"></section><form id="chat-message-form" data-key="${e(this.key)}"><div class="chat-composer"><label for="chat-body" class="sr-label">메시지</label><textarea id="chat-body" name="body" rows="1" maxlength="2000" required placeholder="메시지를 입력하세요"></textarea><button type="submit" class="primary">전송</button></div><small>Enter는 줄바꿈 · 최대 2,000자</small></form>`;
+   const input=document.querySelector('#chat-body');input.value=this.drafts.get(this.key)||'';input.addEventListener('compositionstart',()=>input.dataset.composing='true');input.addEventListener('compositionend',()=>delete input.dataset.composing);input.addEventListener('focus',()=>this.keepComposerVisible());input.addEventListener('input',()=>this.resizeInput(input));this.resizeInput(input);
   }
-  this.paint();
+  this.keepComposerVisible();this.paint();
  }
  paint(){if(typeof document==='undefined')return;const el=document.querySelector('#chat-messages');if(!el)return;const bottom=el.scrollHeight-el.scrollTop-el.clientHeight<60,old=el.scrollHeight;
   const content=(this.before?button('이전 메시지','chatOlder','','wide'):'')+this.messages.map(m=>`<article class="message ${m.mine?'mine':'theirs'}" data-message-id="${e(m.id)}"><small>${m.mine?'나':m.role==='admin'?'관리자':this.mode==='friend'?e(this.title):'플레이어'}</small><p>${e(m.body)}</p><time>${stamp(m.at,true)}</time>${m.pending?`<small class="message-sending">${m.blocked?'전송 실패':m.failed?'연결 대기 · 다시 전송할게요':'전송중'}</small>${m.blocked?button('다시 보내기','chatRetry',`data-request-id="${e(m.requestId)}"`,'link-button'):''}`:m.confirmedUntil>Date.now()?'<small class="message-sent">전송완료</small>':''}</article>`).join('');
@@ -43,12 +50,12 @@ export class ChatUI {
   const r=await this.hooks.read(action,{...this.payload(),...(older?{before:this.before}:{})},background);if(key!==this.key||context!==this.context()||!this.hooks.isChat())return;
   const known=new Set(this.messages.filter(m=>!m.pending).map(m=>m.id)),overlap=r.messages.some(m=>known.has(m.id));
   const all=older?[...r.messages,...this.messages]:[...this.messages,...r.messages];this.messages=[...new Map(all.map(m=>[m.id,m])).values()].sort((a,b)=>a.at-b.at);
-  if(older||!known.size||!overlap&&r.before)this.before=r.before;this.prepending=older;this.save();this.render();
+  if(older||!known.size||!overlap&&r.before)this.before=r.before;this.prepending=older;this.save();this.render();const status=typeof document==='undefined'?null:document.querySelector('#chat-status');if(status)status.textContent='';
  }
  async send(form){
   const input=form.elements.body;if(input.dataset.composing==='true'||!input.value.trim())return;
   const message={id:'local-'+crypto.randomUUID(),requestId:crypto.randomUUID(),body:input.value,at:Date.now(),mine:true,pending:true};
-  this.messages.push(message);input.value='';this.drafts.delete(this.key);this.save();this.paint();await this.deliver(message);
+  this.messages.push(message);input.value='';this.resizeInput(input);this.drafts.delete(this.key);this.save();this.paint();if(typeof document!=='undefined'){const history=document.querySelector('#chat-messages');if(history)history.scrollTop=history.scrollHeight;}await this.deliver(message);
  }
  async deliver(message){
   if(this.sending.has(message.requestId))return;this.sending.add(message.requestId);
