@@ -4,7 +4,7 @@ King.targets = function(s,input) {if(!Array.isArray(input)||!input.length||input
 King.admin = function(s,a,auth,r,env) {
   var t=env.now(),actor=auth.actor;
   if(r.action==='adminUnlock'){
-    if(!env.isAdmin(actor.name)||!env.adminCheck(r.secret||''))King.fail('관리자 인증에 실패했습니다.');
+    if(!env.isAdmin(actor.name)||!auth.passwordAdmin&&!env.adminCheck(r.secret||''))King.fail('관리자 인증에 실패했습니다.');
     var token=env.id()+env.id()+env.id();s.adminSessions[env.hash(token)]={accountId:actor.id,session:env.hash(r.token),expires:t+900000};
     return {adminToken:token,expires:t+900000};
   }

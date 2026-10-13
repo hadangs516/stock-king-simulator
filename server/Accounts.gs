@@ -1,39 +1,50 @@
 var King = typeof King === 'undefined' ? {} : King;
 King.newRun = function(a,t,env) {a.runId=env.id();a.started=t;a.cash=0;a.startingCash=1000000;a.contributedCash=0;a.xp=0;a.xpDaily=null;a.tutorialStep=0;a.attendance={firstGranted:false,lastDate:null,streak:0,history:[]};a.holdings={};a.realized=0;a.playSeconds=0;a.tutorial=false;a.achievements={};a.statistics={companies:[],industries:[],dates:[],memos:0};a.readNews=[];a.readAlerts=[];a.assetHistory=[];a.alerts=[];a.priceAlerts=[];a.activityUntil=t;};
+King.pinMatches=function(a,pin,env){return typeof pin==='string'&&(a.pinHash?a.pinHash===env.sign('account-pin:'+a.id+':'+pin):a.pin===pin);};
+King.passwordAdmin=function(a,env){return !!(env.isPasswordAdmin&&env.isPasswordAdmin(a));};
 King.login = function(s,r,env) {
   var t=env.now();if(typeof r.name!=='string'||r.name.length>30)King.fail('아이디는 한글 2~12자로 입력해 주세요.');var name=r.name.normalize('NFC');
   if(!/^[가-힣]{2,12}$/.test(name))King.fail('아이디는 한글 2~12자로 입력해 주세요.');
   if(typeof r.pin!=='string'||!/^\d{4}$/.test(r.pin))King.fail('PIN은 숫자 4자리입니다.');
-  var a=Object.values(s.accounts).find(function(x){return x.name===name;});
+  var provisionAdmin=false,a=Object.values(s.accounts).find(function(x){return x.name===name;});
   if(r.action==='signup'){
+    if(name==='관리자')King.fail('관리자 아이디는 회원가입할 수 없습니다.');
     if(s.maintenance.enabled)King.fail('점검 중: '+s.maintenance.reason);
     if(a||Object.values(s.accounts).some(function(x){return x.social&&x.social.nickname.toLocaleLowerCase()===name.toLocaleLowerCase();}))King.fail('이미 사용 중인 아이디 또는 닉네임입니다.');if(r.consent!==true)King.fail('가상 투자 안내에 동의해 주세요.');
     a={id:env.id(),name,pin:r.pin,joined:t,logins:0,lifetimeSeconds:0,settings:{terms:true,animation:true,bgm:0,sfx:.3,favorites:[],notifications:{risk:true,orders:true,targets:true}},lastSeen:0};King.newRun(a,t,env);s.accounts[a.id]=a;King.log(s,a,'회원가입',{},t,env);
-  }else if(!a||a.pin!==r.pin)King.fail('아이디 또는 PIN이 올바르지 않습니다.');
-  var isAdmin=env.isAdmin(name)&&env.adminCheck(r.adminSecret||'');
+  }else {
+    if(env.isAdminLoginName&&env.isAdminLoginName(name)&&(!a||!King.passwordAdmin(a,env))){
+      if(!env.verifyAdminLogin(name,r.pin))King.fail('아이디 또는 PIN이 올바르지 않습니다.');
+      if(!a){a={id:env.id(),name,joined:t,logins:0,lifetimeSeconds:0,settings:{terms:true,animation:true,bgm:.3,sfx:.3,favorites:[],notifications:{}},lastSeen:0};King.newRun(a,t,env);a.tutorial=true;a.tutorialStep=8;s.accounts[a.id]=a;}
+      provisionAdmin=true;
+    }
+    if(!a||!provisionAdmin&&!King.pinMatches(a,r.pin,env))King.fail('아이디 또는 PIN이 올바르지 않습니다.');
+  }
+  var automaticAdmin=provisionAdmin||King.passwordAdmin(a,env),isAdmin=automaticAdmin||env.isAdmin(name)&&env.adminCheck(r.adminSecret||'');
   if(s.maintenance.enabled&&!isAdmin)King.fail('점검 중: '+s.maintenance.reason);
   if(a.restricted&&(!a.restricted.until||a.restricted.until>t)&&!isAdmin)King.fail('이용 제한: '+a.restricted.reason);
   var active=Object.values(s.sessions).some(function(v){return v.accountId===a.id&&!v.replacedAt&&v.expires>t;});
   if(active&&r.takeover!==true)return {state:s,response:{loginConflict:true}};
+  if(provisionAdmin){a.pinHash=env.sign('account-pin:'+a.id+':'+r.pin);a.adminLoginProof=env.adminLoginProof(a.id);delete a.pin;King.audit(s,a,a.id,'관리자 일반 로그인 활성화',{}, {configured:true},t,env,'서버 소유자 설정');}
   Object.keys(s.sessions).forEach(function(k){var v=s.sessions[k];if(v.accountId!==a.id)return;if(v.expires<=t)delete s.sessions[k];else if(!v.replacedAt){v.replacedAt=t;v.expires=Math.min(v.expires,t+King.DAY);}});
   Object.keys(s.adminSessions).forEach(function(k){if(s.adminSessions[k].accountId===a.id)delete s.adminSessions[k];});
   Object.keys(s.proxies).forEach(function(k){if(s.proxies[k].actorId===a.id)delete s.proxies[k];});
   King.ensureProgression(a);a.lastLogin=t;a.lastSeen=t;a.logins++;if(!env.isAdmin(a.name))King.log(s,a,'로그인',{},t,env);
-  var token=env.id()+env.id()+env.id();s.sessions[env.hash(token)]={accountId:a.id,expires:t+(r.remember?30*King.DAY:12*3600000)};
+  var token=env.id()+env.id()+env.id();s.sessions[env.hash(token)]={accountId:a.id,passwordAdmin:automaticAdmin,expires:t+(r.remember?30*King.DAY:12*3600000)};
   King.advance(s,t,env);if(King.achievements)King.achievements(s,a,t,env);s.revision++;
   var snapshot=King.snapshot(s,a,t,null,env);snapshot.admin=env.isAdmin(a.name);
   var response={token,snapshot};
-  if(isAdmin){var proof=King.admin(s,a,{actor:a},{action:'adminUnlock',token,secret:r.adminSecret},env);response.adminToken=proof.adminToken;response.adminExpires=proof.expires;}
+  if(isAdmin){var proof=King.admin(s,a,{actor:a,passwordAdmin:automaticAdmin},{action:'adminUnlock',token,secret:r.adminSecret},env);response.adminToken=proof.adminToken;response.adminExpires=proof.expires;}
   return {state:s,response};
 };
 King.authenticate = function(s,r,env) {
   if(typeof r.token!=='string')King.fail('로그인 인증이 필요합니다.');var session=s.sessions[env.hash(r.token)],t=env.now();
   if(!session||session.expires<=t||!s.accounts[session.accountId])King.fail('로그인 인증이 만료되었습니다.');
   if(session.replacedAt)King.fail('다른 기기 또는 브라우저에서 로그인하여 로그아웃되었습니다.');
-  var actor=s.accounts[session.accountId],proof=s.adminSessions[env.hash(r.adminToken||'')];
+  var actor=s.accounts[session.accountId],passwordAdmin=session.passwordAdmin===true&&King.passwordAdmin(s.accounts[session.accountId],env),proof=s.adminSessions[env.hash(r.adminToken||'')];
   var admin=env.isAdmin(actor.name)&&proof&&proof.accountId===actor.id&&proof.session===env.hash(r.token)&&proof.expires>t;
   if(r.proxyToken){var proxy=s.proxies[env.hash(r.proxyToken)];if(!admin||!proxy||proxy.actorId!==actor.id||proxy.adminProof!==env.hash(r.adminToken)||proxy.expires<=t)King.fail('대리 인증이 만료되었습니다.');return {actor,account:s.accounts[proxy.targetId],admin:true,proxy:true};}
-  return {actor,account:actor,admin:!!admin,proxy:false};
+  return {actor,account:actor,admin:!!admin,passwordAdmin:!!passwordAdmin,proxy:false};
 };
 King.activity = function(s,a,r,t,env) {
   if(t-a.lastSeen>=1800000){a.logins++;a.lastLogin=t;if(!env.isAdmin(a.name))King.log(s,a,'로그인',{},t,env);}

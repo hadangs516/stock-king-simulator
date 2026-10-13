@@ -1,8 +1,17 @@
+// Owner-only configuration. Never include the supplied PIN or its hash in public frontend assets.
+function kingAdminLoginConfig_(){
+  var p=PropertiesService.getScriptProperties(),c={name:p.getProperty('ADMIN_LOGIN_NAME'),salt:p.getProperty('ADMIN_LOGIN_PIN_SALT'),hash:p.getProperty('ADMIN_LOGIN_PIN_HASH')};
+  if(!c.name&&!c.salt&&!c.hash&&typeof kingPrivateAdminLoginConfig_==='function'){
+    c=kingPrivateAdminLoginConfig_();
+    if(c&&c.name==='관리자'&&typeof c.salt==='string'&&c.salt.length>=16&&/^[a-f0-9]{64}$/.test(c.hash||''))p.setProperties({ADMIN_LOGIN_NAME:c.name,ADMIN_LOGIN_PIN_SALT:c.salt,ADMIN_LOGIN_PIN_HASH:c.hash},false);
+  }
+  return c&&c.name==='관리자'&&typeof c.salt==='string'&&c.salt.length>=16&&/^[a-f0-9]{64}$/.test(c.hash||'')?c:null;
+}
 function kingEnv_() {
-  var properties=PropertiesService.getScriptProperties(),key=properties.getProperty('SIGNING_KEY');if(!key)throw new Error('서버 초기 설정이 필요합니다.');
+  var properties=PropertiesService.getScriptProperties(),adminLogin=kingAdminLoginConfig_(),key=properties.getProperty('SIGNING_KEY');if(!key)throw new Error('서버 초기 설정이 필요합니다.');
   function hex(bytes){return bytes.map(function(b){return ('0'+((b+256)%256).toString(16)).slice(-2);}).join('');}
   function hash(value){return hex(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256,String(value),Utilities.Charset.UTF_8));}
-  return {health:function(){return {lastTick:properties.getProperty('LAST_TICK_AT')||'미실행',tickMs:Number(properties.getProperty('LAST_TICK_MS')||0),lastStorageError:properties.getProperty('LAST_STORAGE_ERROR_AT')||null};},now:function(){return Date.now();},id:function(){return Utilities.getUuid();},hash,sign:function(value){return hex(Utilities.computeHmacSha256Signature(value,key));},isAdmin:function(name){return (properties.getProperty('ADMIN_NAMES')||'').split(',').map(function(n){return n.trim();}).indexOf(name)>=0;},adminCheck:function(secret){var stored=properties.getProperty('ADMIN_SECRET_HASH');return !!stored&&typeof secret==='string'&&secret.length>=12&&hash(secret)===stored;}};
+  return {health:function(){return {lastTick:properties.getProperty('LAST_TICK_AT')||'미실행',tickMs:Number(properties.getProperty('LAST_TICK_MS')||0),lastStorageError:properties.getProperty('LAST_STORAGE_ERROR_AT')||null};},now:function(){return Date.now();},id:function(){return Utilities.getUuid();},hash,sign:function(value){return hex(Utilities.computeHmacSha256Signature(value,key));},isAdminLoginName:function(name){return !!adminLogin&&name===adminLogin.name;},verifyAdminLogin:function(name,pin){return !!adminLogin&&name===adminLogin.name&&typeof pin==='string'&&hash(adminLogin.salt+':'+pin)===adminLogin.hash;},adminLoginProof:function(id){return hex(Utilities.computeHmacSha256Signature('admin-login-role:'+id+':'+adminLogin.hash,key));},isPasswordAdmin:function(a){return !!adminLogin&&a.name===adminLogin.name&&a.adminLoginProof===hex(Utilities.computeHmacSha256Signature('admin-login-role:'+a.id+':'+adminLogin.hash,key));},isAdmin:function(name){return !!adminLogin&&name===adminLogin.name||(properties.getProperty('ADMIN_NAMES')||'').split(',').map(function(n){return n.trim();}).indexOf(name)>=0;},adminCheck:function(secret){var stored=properties.getProperty('ADMIN_SECRET_HASH');return !!stored&&typeof secret==='string'&&secret.length>=12&&hash(secret)===stored;}};
 }
 function json_(data){return ContentService.createTextOutput(JSON.stringify(data)).setMimeType(ContentService.MimeType.JSON);}
 function doGet(){
@@ -11,7 +20,7 @@ function doGet(){
 }
 function rateLimit_(r,env) {
   if(['login','signup','adminUnlock'].indexOf(r.action)<0)return;
-  var cache=CacheService.getScriptCache(),key='auth:'+env.hash((r.name||r.token||'unknown').slice(0,200)),attempts=Number(cache.get(key)||0);
+  var cache=CacheService.getScriptCache(),key='auth:'+env.hash((r.name||r.token||'unknown').slice(0,200).normalize('NFC')),attempts=Number(cache.get(key)||0);
   if(attempts>=8)throw new Error('인증 시도가 많습니다. 15분 후 다시 시도해 주세요.');cache.put(key,String(attempts+1),900);
 }
 function doPost(e) {
