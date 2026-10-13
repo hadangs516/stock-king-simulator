@@ -60,7 +60,7 @@ King.admin = function(s,a,auth,r,env) {
   }else if(r.action==='adminNews'){
     var newsTitle=King.text(r.title,100),fact=King.text(r.body,4000);if(!newsTitle||!fact)King.fail('제목과 내용을 입력해 주세요.');if(r.newsId){var existing=s.market.news.find(function(n){return n.id===r.newsId;});if(!existing)King.fail('수정할 뉴스를 찾을 수 없습니다.');before=King.clone(existing);existing.title=newsTitle;existing.fact=fact;existing.body=fact.split(/\r?\n+/).filter(Boolean);delete existing.beginner;existing.updatedAt=t;existing.symbol=r.symbol||null;var related=s.market.stocks[existing.symbol];existing.sector=related?related.sector:'경제';existing.image=King.newsImage(existing.sector);}else King.news(s,s.market.stocks[r.symbol]||null,newsTitle,fact,t,0,env);after={title:newsTitle,body:fact};
   }else if(r.action==='adminEconomy'){
-    before=s.market.economy;after={rate:King.int(r.rate,0,3000)/100,inflation:King.int(r.inflation,-1000,10000)/100,activity:King.int(r.activity,0,200)};s.market.economy=after;
+    before=s.market.economy;after={rate:King.int(r.rate,0,3000)/100,inflation:King.int(r.inflation,-1000,10000)/100,activity:King.int(r.activity,0,200)};s.market.economy=after;King.recordEconomy(s.market,t);
   }else if(r.action==='adminReport'){
     var report=s.reports[r.reportId];if(!report||['접수','검토','채택','종료'].indexOf(r.status)<0)King.fail('제보 상태를 확인해 주세요.');before=King.clone(report);report.status=r.status;after=report;
   }else King.fail('지원하지 않는 관리자 작업입니다.');
