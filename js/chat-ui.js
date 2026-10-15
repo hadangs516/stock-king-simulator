@@ -45,12 +45,24 @@ export class ChatUI {
   if(el.innerHTML!==content){el.innerHTML=content;if(this.prepending)el.scrollTop+=el.scrollHeight-old;else if(bottom)el.scrollTop=el.scrollHeight;}this.prepending=false;
  }
  payload(){return this.mode==='friend'?{friendId:this.id}:{conversationId:this.id};}
+ preload(rooms){
+  for(const [id,page] of Object.entries(rooms)){
+   if(this.hooks.isChat?.()&&this.mode==='friend'&&this.id===id)continue;
+   const name='chat:friend:'+id,cached=this.cached(name),old=cached?.messages||[],confirmed=old.filter(m=>!m.pending),known=new Set(confirmed.map(m=>m.id)),overlap=page.messages.some(m=>known.has(m.id)),oldAt=confirmed.at(-1)?.at??-Infinity,newAt=page.messages.at(-1)?.at??-Infinity;
+   const messages=[...new Map([...page.messages,...old].map(m=>[m.id,m])).values()].sort((a,b)=>a.at-b.at);
+   const before=cached&&(overlap||oldAt>newAt)?cached.before:page.before;this.hooks.cache?.write(this.hooks.owner?.(),name,{messages,before});
+  }
+ }
  async refresh(older=false,background=false){
+  const flight=this.key+'|'+older;if(this.reading?.has(flight))return;this.reading??=new Set();this.reading.add(flight);
+  try{await this.readPage(older,background);}finally{this.reading.delete(flight);}
+ }
+ async readPage(older=false,background=false){
   if(!this.hooks.isChat()||!this.id)return;const key=this.key,context=this.context(),action=this.mode==='friend'?'friendMessages':this.mode==='adminSupport'?'adminSupportRead':'supportRead';
   const r=await this.hooks.read(action,{...this.payload(),...(older?{before:this.before}:{})},background);if(key!==this.key||context!==this.context()||!this.hooks.isChat())return;
-  const known=new Set(this.messages.filter(m=>!m.pending).map(m=>m.id)),overlap=r.messages.some(m=>known.has(m.id));
+  const oldest=this.messages.find(m=>!m.pending)?.id,known=new Set(this.messages.filter(m=>!m.pending).map(m=>m.id)),overlap=r.messages.some(m=>known.has(m.id));
   const all=older?[...r.messages,...this.messages]:[...this.messages,...r.messages];this.messages=[...new Map(all.map(m=>[m.id,m])).values()].sort((a,b)=>a.at-b.at);
-  if(older||!known.size||!overlap&&r.before)this.before=r.before;this.prepending=older;this.save();this.render();const status=typeof document==='undefined'?null:document.querySelector('#chat-status');if(status)status.textContent='';
+  if(older||!known.size||r.before===null||!overlap||r.messages.some(m=>m.id===oldest||m.id===this.before))this.before=r.before;this.prepending=older;this.save();this.render();const status=typeof document==='undefined'?null:document.querySelector('#chat-status');if(status)status.textContent='';
  }
  async send(form){
   const input=form.elements.body;if(input.dataset.composing==='true'||!input.value.trim())return;

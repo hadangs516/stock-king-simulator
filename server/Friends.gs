@@ -1,4 +1,9 @@
 var King = typeof King === 'undefined' ? {} : King;
+King.profileAvatar = function(value) {
+  if(value===undefined||value==='')return '';
+  if(typeof value!=='string'||value.length>24576||!/^data:image\/(?:webp|png|jpeg);base64,[A-Za-z0-9+/]+={0,2}$/.test(value)||!/^data:image\/(?:webp;base64,UklGR|png;base64,iVBORw0KGgo|jpeg;base64,\/9j\/)/.test(value))King.fail('프로필 사진을 다시 선택해 주세요.');
+  return value;
+};
 King.friendFields = ['cash','total','holdings','day','playTime','roi','level'];
 King.friendIdentity = function(a,env) {
   if(!a.social)a.social={id:env.id(),nickname:a.name,sharing:{}};
@@ -7,7 +12,7 @@ King.friendIdentity = function(a,env) {
 King.friendLink = function(s,a,b) {return (s.friendships||{})[[a.id,b.id].sort().join(':')];};
 King.friendView = function(s,viewer,a,t,env) {
   var profile=King.friendIdentity(a,env),link=King.friendLink(s,viewer,a);
-  var result={friendId:profile.id,nickname:profile.nickname,relationship:link?(link.status==='accepted'?'friend':link.from===viewer.id?'sent':'received'):'none',shared:{}};
+  var result={friendId:profile.id,nickname:profile.nickname,bio:profile.bio||'',avatar:profile.avatar||'',relationship:link?(link.status==='accepted'?'friend':link.from===viewer.id?'sent':'received'):'none',shared:{}};
   if(!link||link.status!=='accepted')return result;
   var fields=profile.sharing,holdings=Object.entries(a.holdings).map(function(pair){var x=s.market.stocks[pair[0]],q=pair[1].quantity,price=x&&x.status!=='비상장'?x.price:0;return {symbol:pair[0],name:x?x.name:pair[0],quantity:q,price,value:q*price};});
   King.ensureProgression(a);var total=a.cash+holdings.reduce(function(v,h){return v+h.value;},0)+Object.values(s.claims).filter(function(c){return c.accountId===a.id&&c.runId===a.runId&&!c.reward&&c.status==='대기';}).reduce(function(v,c){return v+c.net;},0);
@@ -42,7 +47,7 @@ King.friends = function(s,a,r,t,env,auth) {
     if(!/^[가-힣a-zA-Z0-9 _-]{2,20}$/.test(nickname))King.fail('닉네임은 한글·영문·숫자 2~20자로 입력해 주세요.');
     if(accounts.some(function(x){return x.id!==a.id&&(x.social?x.social.nickname:x.name).toLocaleLowerCase()===nickname.toLocaleLowerCase();}))King.fail('이미 사용 중인 닉네임입니다.');
     var sharing={};King.friendFields.forEach(function(k){sharing[k]=!!(r.sharing&&r.sharing[k]===true);});
-    a.social.nickname=nickname;a.social.sharing=sharing;King.log(s,a,'친구 프로필 변경',{items:['닉네임','공개 항목']},t,env);
+    var avatar=r.avatar===undefined?me.avatar||'':King.profileAvatar(r.avatar),bio=r.bio===undefined?me.bio||'':King.text(r.bio,160);a.social.nickname=nickname;a.social.sharing=sharing;a.social.avatar=avatar;a.social.bio=bio;King.log(s,a,'친구 프로필 변경',{items:['닉네임','공개 항목']},t,env);
   }
   if(r.action==='friendSearch'){
     var query=King.text(r.query,20).normalize('NFC').toLocaleLowerCase();if(query.length<2)King.fail('닉네임을 두 글자 이상 입력해 주세요.');
@@ -65,5 +70,12 @@ King.friends = function(s,a,r,t,env,auth) {
     if(r.action==='friendRemove'){if(link){delete s.friendships[key];King.log(s,a,'친구 삭제·요청 취소',{nickname:other.social.nickname},t,env);}}
   }
   var linked=accounts.filter(function(x){return x.id!==a.id&&King.friendLink(s,a,x);});
-  return {profile:{friendId:me.id,nickname:me.nickname,sharing:me.sharing},friends:linked.map(function(x){return King.friendView(s,a,x,t,env);})};
+  var result={profile:{friendId:me.id,nickname:me.nickname,sharing:me.sharing,avatar:me.avatar||'',bio:me.bio||''},friends:linked.map(function(x){return King.friendView(s,a,x,t,env);})};
+  if(r.preload===true){
+    result.ranking=King.friends(s,a,{action:'friendRanking',metric:'roi'},t,env,auth);result.recentChats={};
+    linked.filter(function(x){return King.friendLink(s,a,x).status==='accepted';}).forEach(function(x){
+      var rows=Object.values(s.friendMessages||{}).filter(function(v){return v.from===a.id&&v.to===x.id||v.from===x.id&&v.to===a.id;}).sort(function(u,v){return u.at-v.at;});
+      result.recentChats[King.friendIdentity(x,env).id]=King.chatPage(rows,{limit:10},function(v){return v.from===a.id;});
+    });
+  }return result;
 };

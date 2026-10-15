@@ -14,7 +14,7 @@ King.chatAuthorize=function(s,a,auth,r){
 };
 King.chatPage=function(rows,r,mine){
   var end=r.before?rows.findIndex(function(v){return v.id===r.before;}):rows.length;if(end<0)King.fail('이전 메시지 위치를 확인해 주세요.');
-  var start=Math.max(0,end-50),page=rows.slice(start,end);
+  var limit=r.limit===undefined?50:King.int(r.limit,1,50),start=Math.max(0,end-limit),page=rows.slice(start,end);
   return {messages:page.map(function(v){return {id:v.id,body:v.body,at:v.at,role:v.role||'friend',mine:mine(v)};}),before:start&&page.length?page[0].id:null};
 };
 King.chatBody=function(a,r,t){
@@ -30,7 +30,7 @@ King.chats=function(s,a,r,t,env,auth){
   if(r.action==='friendMessages'||r.action==='friendSend'){
     var rows=Object.values(s.friendMessages).filter(function(v){return v.from===a.id&&v.to===target.id||v.from===target.id&&v.to===a.id;});
     if(r.action==='friendSend'){var id=env.id();s.friendMessages[id]={id,from:a.id,to:target.id,body:King.chatBody(a,r,t),at:t};King.addAlert(target,id,'friendMessage','친구 새 메시지','친구 대화에서 확인해 주세요.',t);return {sent:id};}
-    return King.chatPage(rows,r,function(v){return v.from===a.id;});
+    rows.sort(function(x,y){return x.at-y.at;});return King.chatPage(rows,r,function(v){return v.from===a.id;});
   }
   if(r.action==='supportList'||r.action==='adminSupportList')return {conversations:Object.values(s.conversations).filter(function(c){return admin||c.accountId===a.id;}).map(function(c){return King.supportSummary(s,c,admin);}).sort(function(x,y){return y.at-x.at;})};
   if(r.action==='supportCreate'){

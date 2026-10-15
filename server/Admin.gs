@@ -9,6 +9,7 @@ King.admin = function(s,a,auth,r,env) {
     return {adminToken:token,expires:t+900000};
   }
   if(!auth.admin||auth.proxy)King.fail('관리자 인증이 필요합니다.');
+  if(r.action==='adminMarketState')return {stocks:Object.values(s.market.stocks).map(function(x){return {id:x.id,name:x.name,price:x.price,financials:King.clone(x.financials||[]),dividend:x.dividend,dividendOverride:x.dividendOverride};})};
   if(r.action==='adminOverview'){
     var filter=King.text(r.search||'',30),offset=King.int(r.offset||0,0,10000000),players=Object.values(s.accounts).filter(function(u){return u.name.indexOf(filter)>=0;}).map(function(u){var total=King.totalAssets(s,u);return {id:u.id,name:u.name,cash:u.cash,total:total,joined:u.joined,lastLogin:u.lastLogin,lastSeen:u.lastSeen,logins:u.logins,lifetimeSeconds:u.lifetimeSeconds,restricted:u.restricted||null};});
     var sort=['name','cash','total','lastSeen','joined','lifetimeSeconds'].indexOf(r.sort)>=0?r.sort:'name';players.sort(function(a,b){return sort==='name'?a.name.localeCompare(b.name):b[sort]-a[sort];});

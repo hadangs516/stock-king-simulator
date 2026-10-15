@@ -21,7 +21,7 @@ King.accountLifecycle = function(s,a,r,t,env,auth) {
   if(r.action==='deleteAccount'){delete s.accounts[a.id];return {deleted:true,loginRequired:true};}
   var next={id:a.id,name:a.name,pin:a.pin,settings:King.clone(a.settings),joined:t,logins:0,lifetimeSeconds:0,lastSeen:0,xp:0};
   if(a.pinHash){next.pinHash=a.pinHash;delete next.pin;}if(a.adminLoginProof)next.adminLoginProof=a.adminLoginProof;
-  if(a.social)next.social={id:env.id(),nickname:a.social.nickname,sharing:King.clone(a.social.sharing)};
+  if(a.social)next.social={id:env.id(),nickname:a.social.nickname,avatar:a.social.avatar||'',bio:a.social.bio||'',sharing:King.clone(a.social.sharing)};
   if(a.restricted)next.restricted=King.clone(a.restricted);
   King.newRun(next,t,env);s.accounts[a.id]=next;
   return {loginRequired:true,snapshot:King.snapshot(s,next,t,null,env)};

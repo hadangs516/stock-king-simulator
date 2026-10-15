@@ -21,7 +21,7 @@ export const api = {
       const response = await fetch(API_URL, {
         method: 'POST', redirect: 'follow', cache: 'no-store', credentials: 'omit',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify({ version: 1, token: this.token, adminToken: this.adminToken, proxyToken: this.proxyToken, action, lightweight:['friends','friendSearch','friendProfile','friendRanking','records','friendMessages','supportList','supportRead','adminSupportList','adminSupportRead'].includes(action), ...data }),
+        body: JSON.stringify({ version: 1, token: this.token, adminToken: this.adminToken, proxyToken: this.proxyToken, action, lightweight:['friends','friendSearch','friendProfile','friendRanking','records','friendMessages','supportList','supportRead','adminSupportList','adminSupportRead','adminMarketState'].includes(action), ...data }),
         signal: options.signal ? AbortSignal.any([controller.signal,options.signal]) : controller.signal
       });
       let result;

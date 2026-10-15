@@ -105,7 +105,7 @@ King.execute = function(original,req,env) {
   if(action==='logout'){if(!auth.proxy&&!env.isAdmin(a.name))King.log(s,a,'로그아웃',{},t,env);delete s.sessions[env.hash(req.token)];s.revision++;return {state:s,response:{ok:true}};}
   var ready=King.advance(s,t,env);
   if(!ready&&action!=='sync')return {state:s,response:{error:'MARKET_CATCHUP',message:'시장을 동기화하고 있습니다. 잠시 후 다시 시도해 주세요.',remaining:Math.floor(t/60000)-s.market.minute}};
-  var reads=['friendRanking','friendMessages','supportList','supportRead','adminSupportList','adminSupportRead','friends','friendSearch','friendProfile','sync','quote','records','receipt','backup','adminOverview','adminPlayer'];
+  var reads=['friendRanking','friendMessages','supportList','supportRead','adminSupportList','adminSupportRead','friends','friendSearch','friendProfile','sync','quote','records','receipt','backup','adminOverview','adminPlayer','adminMarketState'];
   var mutation=reads.indexOf(action)<0;
   if(mutation&&!adminAction&&req.runId!==a.runId)King.fail('회차가 변경되었습니다. 다시 동기화해 주세요.');
   if(adminAction&&action!=='adminUnlock'&&(!auth.admin||auth.proxy))King.fail('관리자 인증이 필요합니다.');
@@ -130,12 +130,12 @@ King.execute = function(original,req,env) {
   if(mutation&&!adminAction)a.backupVersion=(a.backupVersion||0)+1;
   if(result.order){result.order=King.clone(result.order);delete result.order.admin;}
   Object.keys(s.quotes).forEach(function(id){if(s.quotes[id].expires<t-60000)delete s.quotes[id];});
-  var lightRead=req.lightweight===true&&['friends','friendSearch','friendProfile','friendRanking','records','friendMessages','supportList','supportRead','adminSupportList','adminSupportRead'].indexOf(action)>=0;
+  var lightRead=req.lightweight===true&&['friends','friendSearch','friendProfile','friendRanking','records','friendMessages','supportList','supportRead','adminSupportList','adminSupportRead','adminMarketState'].indexOf(action)>=0;
   if(lightRead&&s.market.minute===original.market.minute&&Object.values(s.market.stocks).every(function(x){return x._kingHistory&&!x._kingHistory.loaded;})&&JSON.stringify(King.coreCopy(s))===JSON.stringify(King.coreCopy(original)))return {state:original,response:result};
   s.revision++;
   if(mutation)s.requests[requestKey]={action,accountId:a.id,at:t,result:King.clone(result)};
   if(action==='quote')s.quotes[result.quote.id]=result.quote;
-  if(req.lightweight===true&&['friends','friendSearch','friendProfile','friendRanking','records','friendMessages','supportList','supportRead','adminSupportList','adminSupportRead'].indexOf(action)>=0)return {state:s,response:result};
+  if(req.lightweight===true&&['friends','friendSearch','friendProfile','friendRanking','records','friendMessages','supportList','supportRead','adminSupportList','adminSupportRead','adminMarketState'].indexOf(action)>=0)return {state:s,response:result};
   result.snapshot=King.snapshot(s,a,t,auth.proxy,env);result.snapshot.admin=env.isAdmin(auth.actor.name);
   return {state:s,response:result};
 };

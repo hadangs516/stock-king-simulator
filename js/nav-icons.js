@@ -1,5 +1,5 @@
 // One complete silhouette per icon; gradients/bevels preserve the supplied metallic style.
-export const NAV_TABS=[['home','홈'],['market','거래소'],['assets','내 자산'],['news','뉴스'],['settings','설정']];
+export const NAV_TABS=[['home','홈'],['news','뉴스'],['market','거래소'],['assets','내 자산'],['settings','설정']];
 const gear=Array.from({length:8},(_,i)=>Array.from({length:6},(_,j)=>{const a=(i+j/6)*Math.PI/4-Math.PI/2,r=[20,20,25,25,20,20][j];return [32+Math.cos(a)*r,32+Math.sin(a)*r];})).flat().map((p,i)=>(i?'L':'M')+p.map(n=>n.toFixed(2)).join(' ')).join(' ')+'Z';
 const shapes={
  home:'<path class="nav-body" d="M8 29 32 8l24 21-4 5-3-3v24H15V31l-3 3Z"/><path class="nav-highlight" d="m12 28 20-17 20 17M17 34v18"/><path class="nav-door" d="M27 55V38h10v17Z"/>',
