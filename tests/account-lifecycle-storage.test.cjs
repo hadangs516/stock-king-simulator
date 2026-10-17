@@ -1,0 +1,36 @@
+const {test}=require('node:test'),assert=require('node:assert/strict'),service=require('./segmented-service.cjs');
+const plain=x=>JSON.parse(JSON.stringify(x));
+
+for(const format of [1,2])test(`account reset persists and permits relogin in storage format ${format}`,()=>{
+ const h=service(),u=h.post({action:'signup',name:'초기화검증',pin:'0012',consent:true}),id=u.snapshot.account.id;
+ const other=h.post({action:'signup',name:'보존할계정',pin:'0034',consent:true});
+ h.post({action:'attendance',token:u.token,runId:u.snapshot.account.runId,requestId:'before-reset-grant'});
+ const state=h.read(),a=state.accounts[id];
+ a.settings.terms=false;a.social={id:'old-social',nickname:'보존별명',avatar:'',bio:'소개',sharing:{cash:false}};
+ a.lifetimeSeconds=999;a.playSeconds=120;a.xp=80;
+ state.conversations={mine:{accountId:id,messages:[{body:'private fixture'}]}};
+ h.ctx.KingStore.write(h.ctx.KingStore.open(),state);
+ if(format===2)h.ctx.enableSegmentedStockKingStorage();
+ const before=plain(h.read());h.resetMetrics();
+ const r=h.post({action:'reset',token:u.token,runId:u.snapshot.account.runId,requestId:'reset-storage-regression',pin:'0012',confirm:true});
+ assert.equal(r.error,undefined,JSON.stringify(r));assert.equal(r.loginRequired,true);
+ assert.equal(h.metrics.batches.length,1);
+ h.cache.clear();const saved=plain(h.read()),next=saved.accounts[id];
+ assert.equal(h.ledger.rows[0][0],`스키마 ${format}`);
+ assert.equal(next.name,'초기화검증');assert.equal(next.pin,'0012');assert.equal(next.settings.terms,false);
+ assert.equal(next.social.nickname,'보존별명');assert.equal(next.social.bio,'소개');assert.equal(next.social.sharing.cash,false);
+ assert.notEqual(next.social.id,'old-social');assert.notEqual(next.runId,u.snapshot.account.runId);
+ assert.equal(next.logins,0);assert.equal(next.lifetimeSeconds,0);assert.equal(next.playSeconds,0);assert.equal(next.xp,0);assert.equal(next.cash,0);
+ assert.equal(saved.conversations.mine,undefined);assert.equal(Object.values(saved.records).some(v=>v.accountId===id),false);
+ assert.deepEqual(saved.accounts[other.snapshot.account.id],before.accounts[other.snapshot.account.id]);assert.deepEqual(saved.market,before.market);
+ const row=h.members.rows.find(v=>v[0]===id);assert.equal(row[2],'0012');assert.equal(row[4],h.ctx.King.stamp(next.lastLogin));
+ assert.match(h.post({action:'sync',token:u.token}).message,/인증/);
+ const login=h.post({action:'login',name:'초기화검증',pin:'0012'});assert.ok(login.token);assert.equal(login.snapshot.account.id,id);assert.equal(login.snapshot.account.logins,1);
+ const req={action:'attendance',token:login.token,runId:next.runId,requestId:'after-reset-grant'};
+ assert.equal(h.post(req).snapshot.account.cash,1000000);assert.equal(h.post(req).snapshot.account.cash,1000000);
+ const logout=h.post({action:'logout',token:login.token,runId:next.runId,requestId:'after-reset-logout'});assert.equal(logout.error,undefined);
+ assert.match(h.post({action:'sync',token:login.token}).message,/인증/);
+ const again=h.post({action:'login',name:'초기화검증',pin:'0012'});assert.ok(again.token);
+ const deleted=h.post({action:'deleteAccount',token:again.token,runId:next.runId,requestId:'after-reset-delete',pin:'0012',confirm:true});
+ assert.equal(deleted.deleted,true);assert.equal(h.read().accounts[id],undefined);assert.ok(h.post({action:'sync',token:other.token}).snapshot);
+});
