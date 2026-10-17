@@ -23,7 +23,7 @@ import {sound,installApp,prepareInstall,installSuggestion,dismissInstall} from '
 const $=selector=>document.querySelector(selector), main=$('#main'), modal=$('#modal');
 let confirmedSnapshot=null,snapshot=null,page='home',symbol=null,period='all',authMode='login',busy=false,syncing=null,pending=null,recordOffset=0,records=[];
 let lastMainMarkup=null,friendSettingsReturn='friends',assetEntrance=false,assetAnimationDeadline=0;
-let article=null,newsReturn='news',newsCategory='전체',orderTab='전체',rewardTab='보상',inboxTab='전체',chartPeriod='day';
+let article=null,newsReturn='news',newsCategory='전체',newsLimit=12,orderTab='전체',rewardTab='보상',inboxTab='전체',chartPeriod='day';
 let changedOrders=new Set(),totalChanged=false,lastChartTime=0;
 let lastInput=Date.now(),receivedAt=0,toastAt=0,toastTimer,serverStatus='',lastCash=null,animationFrame,lastCashContext='';
 const pendingKey='king-pending-operation';
@@ -52,7 +52,7 @@ if(VERSION.endsWith('-local')){const note=document.createElement('p');note.class
 const admin=new AdminUI({call:mutate,read:request,modal:showModal,close:()=>modal.close(),toast,navigate,apply,getSnapshot:()=>snapshot,api});
 const friendsUI=new FriendsUI({context:()=>api.token+'|'+api.proxyToken,call:mutate,read:request,cache:browserCache,owner:cacheOwner,modal:showModal,close:()=>modal.close(),toast,isSettings:()=>page==='friendSettings',preload:rooms=>chats.preload(rooms),render:()=>{if(['friends','friendSettings'].includes(page))render();}});
 const chats=new ChatUI({context:()=>api.token+'|'+api.proxyToken,call:sendChat,read:(action,data)=>request(action,data,true),cache:browserCache,owner:cacheOwner,navigate,modal:showModal,close:()=>modal.close(),isChat:()=>page==='chat',isSupport:()=>page==='support'});
-const optimistic=new OptimisticActions({context:()=>api.token+'|'+api.proxyToken+'|'+confirmedSnapshot?.account.runId,send:request,changed:()=>{if(confirmedSnapshot){apply(confirmedSnapshot,false);renderAfterPreference();}},confirmed:s=>{apply(s);renderAfterPreference();},failed:error=>{toast(error.message+' 설정을 다시 확인합니다.');void sync();}});
+const optimistic=new OptimisticActions({context:()=>api.token+'|'+api.proxyToken+'|'+confirmedSnapshot?.account.runId,send:async(action,data)=>{const session=api.token+'|'+api.proxyToken;if(['tutorialProgress','tutorial'].includes(action)&&attendanceSaving)await attendanceSaving;if(session!==api.token+'|'+api.proxyToken)throw Object.assign(new Error('로그인이 변경되었습니다.'),{cancelled:true});return request(action,data,true);},changed:()=>{if(confirmedSnapshot){apply(confirmedSnapshot,false);renderAfterPreference();}},confirmed:s=>{apply(s);renderAfterPreference();},failed:error=>{toast(error.message+' 저장 상태를 다시 확인합니다.');void sync();}});
 function renderAfterPreference(){document.querySelectorAll('#settings-form input').forEach(input=>{if(!snapshot)return;const value=snapshot.account.settings[input.name];if(input.name==='bgm'&&input.closest('label')?.querySelector('output'))input.closest('label').querySelector('output').textContent=Math.round(value*100)+'%';if(input.type==='checkbox')input.checked=!!value;else if(!input.matches(':active'))input.value=value;});if(!modal.open&&!['INPUT','TEXTAREA','SELECT'].includes(document.activeElement?.tagName))render();}
 function localAction(action,data,patch){optimistic.enqueue(action,{...data,runId:snapshot.account.runId,requestId:crypto.randomUUID()},patch);}
 function loginVolume(){try{const value=Number(preferenceStorage?.getItem('king-login-bgm'));return preferenceStorage?.getItem('king-login-bgm')!==null&&Number.isFinite(value)?Math.max(0,Math.min(1,value)):.3;}catch{return .3;}}
@@ -169,7 +169,7 @@ function nav(){const selected=({detail:'market',orders:'market',newsDetail:'news
 function render(){
  $('#app').insertBefore($('#connection'),main);friendsUI.resetForContext();if(!snapshot)return renderLogin(serverStatus);if(page==='newsDetail'&&!article)page='news';if(page==='detail'&&!snapshot.stocks.some(x=>x.id===symbol))page='market';document.body.classList.toggle('is-chat',page==='chat');$('#nav').hidden=page==='chat';nav();const s=snapshot;
  const enteringAssets=['assets','total'].includes(page)&&(assetEntrance||main.dataset.page!==page);if(enteringAssets)assetAnimationDeadline=performance.now()+1200;
- main.dataset.page=page;if(page==='friendSettings'&&friendsUI.data&&$('#friend-settings-form')){friendsUI.hydrateSettings();return;}const content={newsDetail:()=>view.newsArticle(s,article),friends:()=>friendsUI.view(),friendSettings:()=>friendsUI.settingsView(),home:()=>view.home(s,period),market:()=>view.market(s,filter),news:()=>view.news(s,s.news,true,newsCategory),assets:()=>view.assets(s,period),settings:()=>view.settings(s),total:()=>view.total(s),orders:()=>view.orders(s,orderTab),inbox:()=>view.inbox(s,inboxTab),rewards:()=>view.rewards(s,rewardTab),achievements:()=>view.achievements(s),detail:()=>view.detail(s,s.stocks.find(x=>x.id===symbol),chartPeriod),economy:()=>economy(),records:()=>recordsView(),terms:()=>glossaryPage(s)};
+ main.dataset.page=page;if(page==='friendSettings'&&friendsUI.data&&$('#friend-settings-form')){friendsUI.hydrateSettings();return;}const content={newsDetail:()=>view.newsArticle(s,article),friends:()=>friendsUI.view(),friendSettings:()=>friendsUI.settingsView(),home:()=>view.home(s,period),market:()=>view.market(s,filter),news:()=>view.news(s,s.news,true,newsCategory,newsLimit),assets:()=>view.assets(s,period),settings:()=>view.settings(s),total:()=>view.total(s),orders:()=>view.orders(s,orderTab),inbox:()=>view.inbox(s,inboxTab),rewards:()=>view.rewards(s,rewardTab),achievements:()=>view.achievements(s),detail:()=>view.detail(s,s.stocks.find(x=>x.id===symbol),chartPeriod),economy:()=>economy(),records:()=>recordsView(),terms:()=>glossaryPage(s)};
  if(page==='chat'){lastMainMarkup=null;chats.render();$('#chat-connection-host').append($('#connection'));return;}if(page==='support'){lastMainMarkup=null;main.innerHTML=chats.listView();return;}if(page==='admin'){lastMainMarkup=null;admin.render();return;}const markup=(content[page]||content.home)();if(markup===lastMainMarkup)return;lastMainMarkup=markup;main.classList.toggle('market-updated',lastChartTime!==s.marketTime);lastChartTime=s.marketTime;const expanded=[...main.querySelectorAll('details[data-achievement][open],details[data-panel][open]')].map(el=>(el.dataset.panel||el.dataset.achievement));const oldPrices=new Map([...main.querySelectorAll('[data-price]')].map(el=>[el.dataset.price,Number(el.dataset.amount)]));const oldMoney=new Map([...main.querySelectorAll('[data-money]')].map(el=>[el.dataset.moneyKey,Number(el.dataset.displayed??el.dataset.money)]));const friendDraft=page==='friends'?$('#friend-search')?.value:null,friendFocused=document.activeElement?.id==='friend-search';main.innerHTML=markup;if(['assets','total'].includes(page)){animateAssetAmounts(main,enteringAssets,reduced(),oldMoney,performance.now()<assetAnimationDeadline?assetAnimationDeadline:Infinity);if(enteringAssets)animateAssetAmounts($('#ticker'),true,reduced(),new Map(),assetAnimationDeadline);assetEntrance=false;}if(friendDraft!==null&&friendDraft!==undefined&&$('#friend-search')){$('#friend-search').value=friendDraft;if(friendFocused)$('#friend-search').focus({preventScroll:true});}main.querySelectorAll('[data-price]').forEach(el=>animateMoney(el,oldPrices.get(el.dataset.price),Number(el.dataset.amount),reduced()));main.querySelectorAll('details[data-achievement],details[data-panel]').forEach(el=>el.open=expanded.includes((el.dataset.panel||el.dataset.achievement)));if(page==='total'&&totalChanged)$('#total-number')?.classList.add('changed');main.querySelectorAll('[data-order]').forEach(el=>{if(changedOrders.has(el.dataset.order))el.classList.add('changed');});changedOrders.clear();if(s.account.settings.terms)main.querySelectorAll('.receipt span.muted').forEach(el=>{const term=Object.keys(terms).sort((a,b)=>b.length-a.length).find(t=>el.textContent.includes(t));if(term){const b=document.createElement('button');b.type='button';b.className='link-button';b.dataset.action='help';b.dataset.term=term;b.textContent=el.textContent+' ⓘ';el.replaceWith(b);}});
 }
 function finishAccountLifecycle(action,id){
@@ -221,14 +221,14 @@ function estimate(){
 let tutorialStep=0,tutorialReplay=false;
 function tutorial(replay=false){tutorialReplay=replay;tutorialStep=replay?0:(snapshot.account.tutorialStep||0);showTutorial();}
 function showTutorial(){showModal('주식왕의 첫걸음',tutorialPage(snapshot,tutorialStep,tutorialReplay));}
-let attendanceRequest=null;
+let attendanceRequest=null,attendanceSaving=null;
 function showAttendance(required=false){showModal('출석 보상',attendancePage(snapshot));if(!snapshot.attendance?.claimed){attendanceRequest={runId:snapshot.account.runId,requestId:crypto.randomUUID()};if(required){modal.dataset.required='true';$('#modal-close').hidden=true;}if(Date.now()-receivedAt>5000)void sync(false);}}
-async function tutorialNext(){const step=Math.min(8,tutorialStep+1);if(!tutorialReplay&&snapshot.attendance)await mutate('tutorialProgress',{step});tutorialStep=step;showTutorial();}
+function tutorialNext(){tutorialStep=Math.min(8,tutorialStep+1);if(!tutorialReplay&&snapshot.attendance){const step=tutorialStep;localAction('tutorialProgress',{step},s=>{s.account.tutorialStep=Math.max(s.account.tutorialStep||0,step);});}showTutorial();}
 async function collectAttendance(target,first){
  const before=snapshot.account.cash,epoch=screenEpoch;target.disabled=true;delete modal.dataset.required;modal.close();
- const operation=mutate('attendance',attendanceRequest||{});if(first&&epoch===screenEpoch){showTutorial();animateMoney($('#welcome-cash'),before,snapshot.account.cash,reduced());}
+ const operation=attendanceSaving=mutate('attendance',attendanceRequest||{});if(first&&epoch===screenEpoch){showTutorial();animateMoney($('#welcome-cash'),before,snapshot.account.cash,reduced());}
  try{const r=await operation;attendanceRequest=null;if(r.amount)toast('출석 보상 '+money(r.amount)+'을 받았어요.');}
- finally{if(target.isConnected)target.disabled=false;}
+ finally{if(attendanceSaving===operation)attendanceSaving=null;if(target.isConnected)target.disabled=false;}
 }
 
 function readNews(id){if(snapshot.readNews.includes(id))return;localAction('readNews',{id},s=>{if(!s.readNews.includes(id))s.readNews.push(id);});}
@@ -270,7 +270,8 @@ document.addEventListener('click',async event=>{
   if(action==='inboxTab'){inboxTab=target.dataset.tab;return render();}
   if(action==='readAlert'||action==='readAllAlerts'){const ids=action==='readAlert'?[target.dataset.id]:(snapshot.alerts||[]).map(n=>n.id);for(let i=0;i<ids.length;i+=500)durable.enqueue('readAlerts',{ids:ids.slice(i,i+500),runId:snapshot.account.runId,requestId:crypto.randomUUID()});toast('읽음 완료');return;}
   if(action==='orderTab'){orderTab=target.dataset.tab;return render();}
-  if(action==='newsCategory'){newsCategory=target.dataset.category;return render();}
+  if(action==='newsCategory'){newsCategory=target.dataset.category;newsLimit=12;return render();}
+  if(action==='moreNews'){newsLimit+=12;return render();}
   if(action==='newsBack')return navigate(newsReturn);
   if(action==='removePriceAlert'){await mutate('priceAlert',{remove:target.dataset.id});return;}
   if(action==='priceAlert'){const x=snapshot.stocks.find(x=>x.id===target.dataset.symbol);return showModal('목표가 알림',`<form id="price-alert-form" data-symbol="${x.id}"><p>${e(x.name)} · 현재 ${money(x.price)}</p><label>목표 가격<input name="price" type="number" min="1" max="1000000000" value="${x.price}" required></label><label>조건<select name="direction"><option value="above">이상 도달</option><option value="below">이하 도달</option></select></label><p class="footnote">다음 시세부터 조건 충족 시 한 번 알립니다. 자동 주문은 실행하지 않으며, 외부 푸시는 아직 연결되지 않았습니다.</p><button class="primary wide">목표가 등록</button></form>`);}
@@ -297,14 +298,14 @@ document.addEventListener('click',async event=>{
   if(action==='save'){await mutate('save');return toast('서버에 저장되었습니다.');}
   if(action==='logout'){await request('logout');api.clear();snapshot=null;confirmedSnapshot=null;pending=null;lastCash=null;modal.close();return renderLogin();}
   if(action==='tutorial')return tutorial(true);
-  if(action==='tutorialNext')return await tutorialNext();
+  if(action==='tutorialNext')return tutorialNext();
   if(action==='tutorialPrevious'){tutorialStep=Math.max(0,tutorialStep-1);return showTutorial();}
   if(action==='tutorialReturn')return showTutorial();
   if(action==='tutorialInstall')return installApp((title,body)=>showModal(title,body+view.button('안내로 돌아가기','tutorialReturn','','primary wide')));
   if(action==='firstGrant')return await collectAttendance(target,true);
   if(action==='attendance')return showAttendance();
   if(action==='attendanceClaim')return await collectAttendance(target,false);
-  if(action==='finishTutorial'){if(!tutorialReplay)await mutate('tutorial');modal.close();dismissInstall();return;}
+  if(action==='finishTutorial'){if(!tutorialReplay)localAction('tutorial',{},s=>{s.account.tutorial=true;s.account.tutorialStep=8;});modal.close();dismissInstall();return;}
   if(['pin','reset','deleteAccount','report','notifications'].includes(action))return settingsForm(action);
   if(action==='terms')return navigate('terms');
   if(action==='accountSettings')return showModal('계정 설정',view.accountSettings(snapshot));

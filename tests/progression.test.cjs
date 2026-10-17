@@ -28,6 +28,12 @@ test('tutorial progress resumes and cannot skip the first grant',()=>{
  assert.throws(()=>h.call('tutorialProgress',{...auth,requestId:'step-next-two',step:2}),/보상/);
  claim(h,auth,'first');h.call('tutorialProgress',{...auth,requestId:'step-next-three',step:2});assert.equal(h.call('sync',{token:r.token}).snapshot.account.tutorialStep,2);
 });
+test('tutorial progress recovers a missed background save without regressing or bypassing the first grant',()=>{
+ const {h,r,auth}=start();assert.throws(()=>h.call('tutorialProgress',{...auth,requestId:'early-skipped-progress',step:5}),/보상/);
+ claim(h,auth,'first');h.call('tutorialProgress',{...auth,requestId:'recovered-progress',step:5});
+ assert.equal(h.call('sync',{token:r.token}).snapshot.account.tutorialStep,5);
+ h.call('tutorialProgress',{...auth,requestId:'late-old-progress',step:2});assert.equal(h.call('sync',{token:r.token}).snapshot.account.tutorialStep,5);
+});
 test('XP is server awarded, capped daily and repeated article clicks do not farm points',()=>{
  const {h,r,auth}=start();claim(h,auth,'first');const id=h.s.market.news[0].id;
  for(let i=0;i<20;i++)h.call('readNews',{...auth,requestId:'read-article-'+i,id,xp:999999});

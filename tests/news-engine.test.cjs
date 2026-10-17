@@ -18,20 +18,20 @@ test('minute price noise does not form long same-direction runs from consecutive
   assert.equal(K.priceNoise('repeat'),K.priceNoise('repeat'));
  }
 });
-test('authored event library has distinct complete articles and uses a small reusable image set',()=>{
+test('authored event library has distinct concise articles and uses a small reusable image set',()=>{
  const {K}=harness();assert.ok(K.newsLibrary.length>=12);assert.equal(new Set(K.newsLibrary.map(n=>n.id)).size,K.newsLibrary.length);
- for(const n of K.newsLibrary){assert.ok(n.body.length>=10,n.id);assert.ok(new Set(n.body).size>=10,n.id);assert.ok(['시장뉴스','기업뉴스','이벤트'].includes(n.category));}
+ for(const n of K.newsLibrary){assert.ok(n.body.length>=2&&n.body.length<=3,n.id);assert.equal(new Set(n.body).size,n.body.length,n.id);assert.ok(['시장뉴스','기업뉴스','이벤트'].includes(n.category));}
  assert.ok(new Set(K.newsLibrary.map(n=>n.image)).size<=7);
 });
 test('news and prices are identical for minute processing and delayed catchup with irregular publication times',()=>{
- const a=harness(),b=harness(),ua=signup(a),ub=signup(b);for(let i=0;i<240;i++){a.advance(60000);a.call('sync',{token:ua.token});}b.advance(240*60000);b.call('sync',{token:ub.token});
+ const a=harness(),b=harness(),ua=signup(a),ub=signup(b);for(let i=0;i<720;i++){a.advance(60000);a.call('sync',{token:ua.token});}for(let i=0;i<2;i++){b.advance(360*60000);b.call('sync',{token:ub.token});}
  assert.equal(JSON.stringify(a.s.market.news),JSON.stringify(b.s.market.news));assert.equal(a.s.market.stocks['005930'].price,b.s.market.stocks['005930'].price);
  const generated=a.s.market.news.filter(n=>n.id.startsWith('event-'));assert.ok(generated.length>=2);assert.ok(generated.some(n=>new Date(n.at).getUTCMinutes()!==0));
  const count=a.s.market.news.length;a.call('sync',{token:ua.token});assert.equal(a.s.market.news.length,count);
 });
-test('DAY 5 has the same facts but no beginner explanation or private future market fields',()=>{
+test('all players receive the same concise facts without lessons or private future market fields',()=>{
  const h=harness(),a=signup(h),id=a.snapshot.account.id;const first=h.call('sync',{token:a.token}).snapshot;h.s.accounts[id].started-=4*86400000;const later=h.call('sync',{token:a.token}).snapshot;
- assert.deepEqual(first.news.map(n=>n.body),later.news.map(n=>n.body));assert.ok(first.news.some(n=>n.beginner));assert.ok(later.news.every(n=>!('beginner' in n)));
+ assert.deepEqual(first.news.map(n=>n.body),later.news.map(n=>n.body));assert.ok(first.news.every(n=>!('beginner' in n)));assert.ok(later.news.every(n=>!('beginner' in n)));
  for(const n of later.news)for(const key of ['impact','difficulty','nextAt','seed'])assert.equal(key in n,false);
  for(const x of later.stocks)for(const key of ['fundamental','trend','pressure','tradeEpoch'])assert.equal(key in x,false);
 });

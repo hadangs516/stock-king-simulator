@@ -38,5 +38,5 @@ King.forkState = function(state) {
 };
 King.publicStock = function(stock) {
   var value={};Object.keys(stock).forEach(function(k){if(k!=='history'&&['fundamental','trend','pressure','tradeEpoch'].indexOf(k)<0)value[k]=King.clone(stock[k]);});
-  value.history=King.clone(King.historyPreview(stock));value.chartBars=King.clone(King.historyBars(stock));return value;
+  value.browseHidden=!King.marketVisible(stock);value.history=King.clone(King.historyPreview(stock));value.chartBars=King.clone(King.historyBars(stock));return value;
 };

@@ -1,4 +1,4 @@
-// Only reversible preferences and read markers belong here. Never money or orders.
+// Only preferences, read markers and onboarding belong here. Never money or orders.
 export class OptimisticActions {
  constructor(hooks){this.hooks=hooks;this.queue=[];this.running=false;}
  project(snapshot){
@@ -7,7 +7,7 @@ export class OptimisticActions {
   return copy;
  }
  enqueue(action,data,patch){
-  if(!['settings','readNews','tutorial'].includes(action))throw new Error('즉시 반영할 수 없는 요청입니다.');
+  if(!['settings','readNews','tutorialProgress','tutorial'].includes(action))throw new Error('즉시 반영할 수 없는 요청입니다.');
   this.queue.push({action,data,patch,context:this.hooks.context()});this.hooks.changed();void this.drain();
  }
  async drain(){

@@ -5,13 +5,13 @@ export function tutorialPage(s,step,replay=false){
  const pages=[
   `<h3>${e(s.account.name)}님! 만나서 반가워요.</h3>`,
   `<h3>첫 접속 보상으로 1,000,000원을 드려요.</h3><p class="welcome-wallet">내 현금 <strong id="welcome-cash">${money(s.account.cash)}</strong></p><div class="welcome-coins" aria-hidden="true">₩</div><p id="welcome-grant">${paid?'수령 완료':button('받기','firstGrant','','primary wide')}</p>`,
-  '<h3>앞으로도 연속 출석하면 보상을 드릴게요!</h3><p>매일 100,000원, 보상표의 7·14·21·28일차에 500,000원을 드려요.<br>연속 출석 30일차에는 3,000,000원을 드려요.</p><p>30일 보상표는 반복돼요. 출석이 끊기면 1일차부터 다시 시작하고, 첫 접속 100만 원은 다시 지급되지 않아요.</p>',
-  '<h3>시작 전, 간단하게 게임에 대한 설명하고 넘어갈게요.</h3>',
-  '<h3>주의 사항!</h3><p>이 게임은 주식 투자를 직접 해보는 게임이에요. 용어·세금·수수료처럼 현실을 반영한 요소도 있지만 실제와 다른 점이 많아요.</p><p>여기서 투자를 잘한다고 현실에서도 잘한다는 보장은 없어요. 번 돈은 실제 현금과 교환할 수 없어요.</p><p>주가는 현실 주가와 무관해요. 현실에서 오른다고 게임에서 오르지 않으며 반대도 마찬가지예요.</p>',
-  '<h3>이 게임은 이래요!</h3><p>그날그날 뉴스를 읽고 투자 상품을 골라요. 상장 기업 주식을 구매하고 코스피·코스닥과 ETF를 거래해요. ETF는 DAY 4부터 열려요.</p><p>다른 사람과 경쟁할 수 있도록 모든 사람의 주가가 연동되어 같은 시간에 같은 만큼 오르고 내려요. 주가는 매분 변해요.</p>',
-  '<h3>나만의 프로필을 꾸며 보세요!</h3><p>설정의 내 프로필에서 사진·닉네임·소개를 꾸밀 수 있어요. 사진과 소개는 친구 목록과 친구 검색에 보여요.</p><p>게임 중 궁금한 점, 오류·버그, 새 기능 제안은 설정의 고객센터에서 문의를 작성하면 관리자가 확인 후 답변해요.</p>',
-  `<h3>게임을 시작하기 전!</h3><p>자주 접속해야 더 유리해요. 편하게 접속할 수 있도록 앱을 설치해 보세요.</p><p>지금 설치하지 않아도 언제든 설정에서 설치할 수 있어요. 설치 후 삭제해도 불이익은 없어요.</p>${button('설치하기','tutorialInstall','','wide')}`,
-  '<h3>모든 설명이 끝났어요. 이제 바로 게임 시작할게요!</h3>'
+  '<h3>매일 출석하고 보상을 받아요!</h3><p>꾸준히 출석하면 더 많은 보상을 받을 수 있어요.</p>',
+  '<h3>뉴스를 살펴보고 마음에 드는 기업을 찾아보세요.</h3>',
+  '<h3>가볍게 즐기는 가상 투자</h3><p>게임의 주가와 사건은 현실과 달라요. 게임머니는 실제 현금으로 바꿀 수 없어요.</p>',
+  '<h3>나만의 투자를 시작해요!</h3><p>기업의 주식과 ETF를 사고팔 수 있어요. 모든 플레이어가 같은 시장에서 투자해요.</p>',
+  '<h3>친구와 함께 즐겨요!</h3><p>프로필을 꾸미고 친구와 투자 이야기를 나눠 보세요.</p>',
+  `<h3>게임을 시작하기 전!</h3><p>앱을 설치하면 더 편하게 접속할 수 있어요.</p>${button('설치하기','tutorialInstall','','wide')}`,
+  '<h3>준비됐어요. 게임을 시작해 볼까요?</h3>'
  ];
  const icons=['shortcut-gift-object','coin-transparent','calendar-transparent','book-transparent','info-transparent','book-transparent','support-transparent','account-transparent','shortcut-chest-object'];
  const coinPage=pages[step].replace('<div class="welcome-coins" aria-hidden="true">₩</div>','<div class="welcome-coins" aria-hidden="true"><img src="./assets/ui/reference/coin-transparent.webp" alt=""></div>');
@@ -26,4 +26,4 @@ export function attendancePage(s){
   return `<div class="attendance-day ${kind} ${done?'claimed':''} ${today?'current':''}" aria-label="${cycleDay}일차 ${money(amount)}${done?' 수령 완료':today?' 오늘':''}"><img src="./assets/ui/reference/attendance-${kind}.webp" alt=""><strong aria-hidden="true">${cycleDay}</strong><span class="attendance-amount ${amount===3000000?'override':'sr-label'}">${money(amount)}</span>${done?'<small>수령 완료</small>':''}</div>`;
  }).join('')}</div><img class="attendance-footer-art" src="./assets/ui/reference/attendance-footer-transparent.webp" width="941" height="218" alt="">${a.claimed?'<button type="button" class="attendance-received" data-action="close" aria-label="수령 완료 · 출석창 닫기"><span>수령 완료</span></button>':button('<span class="sr-label">받기</span>','attendanceClaim',`aria-label="출석 보상 ${money(a.amount)} 받기"`,'attendance-receive')}</div>`;
 }
-export function growthCard(g){return g?`<section class="growth-card"><div class="row spread"><strong>Lv. ${g.level}</strong><span>${g.xp.toLocaleString('ko-KR')} XP</span></div><progress max="${g.required}" value="${g.progress}" aria-label="다음 레벨까지 경험치"></progress><small>다음 레벨까지 ${(g.required-g.progress).toLocaleString('ko-KR')} XP · 하루 최대 100 XP</small></section>`:'';}
+export function growthCard(g){return g?`<section class="growth-card"><div class="row spread"><strong>Lv. ${g.level}</strong><span>${g.xp.toLocaleString('ko-KR')} XP</span></div><progress max="${g.required}" value="${g.progress}" aria-label="다음 레벨까지 경험치"></progress><small>다음 레벨까지 ${(g.required-g.progress).toLocaleString('ko-KR')} XP</small></section>`:'';}

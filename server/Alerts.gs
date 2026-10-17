@@ -33,7 +33,7 @@ King.orderAlertKind=function(type,data){if(type==='예약 체결')return data.ki
 King.alertNews=function(s,n,t){
  // Delisting forecasts remain articles, never advance warnings in the alert feed.
  if(/상장폐지/.test(n.title+' '+(n.fact||'')))return;
- Object.values(s.accounts).forEach(function(a){if(n.at<a.started)return;var kind=!n.symbol?'marketNews':a.holdings[n.symbol]?'heldNews':a.settings.favorites.indexOf(n.symbol)>=0?'favoriteNews':null;if(kind){King.addAlert(a,n.id,kind,n.title,'뉴스에서 내용을 확인해 주세요.',t,n.symbol);if(kind==='heldNews'&&a.settings.favorites.indexOf(n.symbol)>=0)a.alerts.find(function(v){return v.id===n.id;}).alsoFavorite=true;}});
+ Object.values(s.accounts).forEach(function(a){if(n.at<a.started)return;var symbols=Array.isArray(n.symbols)?n.symbols:n.symbol?[n.symbol]:[],held=symbols.some(function(id){return !!a.holdings[id];}),favorite=symbols.some(function(id){return a.settings.favorites.indexOf(id)>=0;}),kind=held?'heldNews':favorite?'favoriteNews':!n.symbol?'marketNews':null;if(kind){King.addAlert(a,n.id,kind,n.title,'뉴스에서 내용을 확인해 주세요.',t,n.symbol);if(kind==='heldNews'&&favorite)a.alerts.find(function(v){return v.id===n.id;}).alsoFavorite=true;}});
 };
 King.notificationFeed=function(s,a,t,proxy,includeMuted){
  var settings=King.notificationSettings(a),items=[],options={};King.notificationOptions.forEach(function(o){options[o.id]=o;});

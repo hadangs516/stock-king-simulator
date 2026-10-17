@@ -19,3 +19,13 @@ test('late preference result cannot overwrite a different account',async()=>{
  const q=new OptimisticActions({context:()=>context,send:()=>new Promise(r=>resolve=r),changed:()=>{},confirmed:()=>applied++,failed:()=>{}});
  q.enqueue('settings',{},s=>s.value=2);context='b';assert.equal(q.project({value:9}).value,9);resolve({snapshot:{value:2}});await new Promise(r=>setImmediate(r));assert.equal(applied,0);
 });
+test('rapid tutorial steps and completion display before delayed saves and reach the server in order',async()=>{
+ const {OptimisticActions}=await import('../js/optimistic.js'),{harness,signup}=require('./helpers.cjs');
+ const h=harness(),u=signup(h);let base=JSON.parse(JSON.stringify(u.snapshot)),display,release;const sent=[];
+ const q=new OptimisticActions({context:()=>u.token,send:async(action,data)=>{sent.push(action==='tutorialProgress'?data.step:'finish');await new Promise(r=>release=r);return h.call(action,{token:u.token,...data});},changed:()=>display=q.project(base),confirmed:s=>{base=JSON.parse(JSON.stringify(s));display=q.project(base);},failed:error=>assert.fail(error.message)});
+ for(let step=1;step<=8;step++)q.enqueue('tutorialProgress',{step,runId:base.account.runId,requestId:'rapid-step-'+step},s=>s.account.tutorialStep=step);
+ q.enqueue('tutorial',{runId:base.account.runId,requestId:'rapid-tutorial-finish'},s=>s.account.tutorial=true);
+ assert.equal(display.account.tutorialStep,8);assert.equal(display.account.tutorial,true);assert.equal(h.s.accounts[base.account.id].tutorial,false);assert.deepEqual(sent,[1]);
+ for(let i=0;i<9;i++){release();await new Promise(r=>setImmediate(r));}
+ assert.deepEqual(sent,[1,2,3,4,5,6,7,8,'finish']);assert.equal(h.s.accounts[base.account.id].tutorialStep,8);assert.equal(h.s.accounts[base.account.id].tutorial,true);assert.equal(display.account.tutorial,true);
+});
